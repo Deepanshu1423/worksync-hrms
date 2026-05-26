@@ -12,6 +12,7 @@ import employeeRoutes from "./modules/employees/employee.routes";
 import roleRoutes from "./modules/roles/role.routes";
 import attendanceRoutes from "./modules/attendance/attendance.routes";
 import projectRoutes from "./modules/projects/project.routes";
+import taskRoutes from "./modules/tasks/task.routes";
 
 const app = express();
 
@@ -68,4 +69,5 @@ app.use("/api/employees", employeeRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/projects", projectRoutes);
+app.use("/api/tasks", taskRoutes);
 export default app;

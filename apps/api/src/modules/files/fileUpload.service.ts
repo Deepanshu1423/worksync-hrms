@@ -12,8 +12,9 @@ type CreateFileAssetInput = {
 };
 
 /**
- * Checks whether Cloudinary credentials are available.
- * This gives a clear error instead of a confusing upload failure.
+ * Checks Cloudinary credentials.
+ *
+ * This gives a clear error if .env credentials are missing.
  */
 const ensureCloudinaryConfigured = () => {
   if (
@@ -26,8 +27,9 @@ const ensureCloudinaryConfigured = () => {
 };
 
 /**
- * Uploads a buffer file to Cloudinary.
- * Multer memoryStorage gives file.buffer, and we stream it to Cloudinary.
+ * Uploads file buffer to Cloudinary.
+ *
+ * resource_type: "auto" allows images, PDFs and other document files.
  */
 const uploadBufferToCloudinary = async (
   fileBuffer: Buffer,
@@ -39,7 +41,7 @@ const uploadBufferToCloudinary = async (
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder,
-        resource_type: "image",
+        resource_type: "auto",
       },
       (error, result) => {
         if (error || !result) {
@@ -55,7 +57,13 @@ const uploadBufferToCloudinary = async (
 };
 
 /**
- * Uploads file to Cloudinary and then saves metadata in file_assets table.
+ * Uploads file to Cloudinary and stores metadata in file_assets table.
+ *
+ * This is reusable for:
+ * - attendance photos
+ * - profile images
+ * - task attachments
+ * - project documents
  */
 export const createFileAssetFromUpload = async ({
   file,
