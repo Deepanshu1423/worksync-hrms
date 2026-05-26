@@ -1,0 +1,281 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+  ON_NOTICE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  HALF_DAY
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  IN_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("departments")
+}
+
+model Designation {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("designations")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  employeeCode String     @unique
+  fullName     String
+  email        String     @unique
+  mobile       String     @unique
+  passwordHash String
+  status       UserStatus @default(ACTIVE)
+
+  roleId        String
+  departmentId  String?
+  designationId String?
+  managerId     String?
+
+  dateOfJoining     DateTime?
+  terminatedAt      DateTime?
+  terminationReason String?
+
+  profileImageId String?
+  lastLoginAt    DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  role        Role         @relation(fields: [roleId], references: [id])
+  department  Department?  @relation(fields: [departmentId], references: [id])
+  designation Designation? @relation(fields: [designationId], references: [id])
+
+  manager     User?  @relation("ManagerEmployees", fields: [managerId], references: [id])
+  teamMembers User[] @relation("ManagerEmployees")
+
+  attendanceRecords AttendanceRecord[]
+  assignedTasks     Task[]             @relation("AssignedTasks")
+  createdTasks      Task[]             @relation("CreatedTasks")
+
+  uploadedFiles           FileAsset[]
+  employeeStatusHistories EmployeeStatusHistory[] @relation("EmployeeStatusUser")
+  statusActions           EmployeeStatusHistory[] @relation("EmployeeStatusActionBy")
+  projectMembers          ProjectMember[]
+  taskComments            TaskComment[]
+
+  @@map("users")
+}
+
+model OfficeLocation {
+  id            String   @id @default(uuid())
+  name          String
+  address       String
+  latitude      Decimal  @db.Decimal(10, 8)
+  longitude     Decimal  @db.Decimal(11, 8)
+  allowedRadius Int      @default(200)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("office_locations")
+}
+
+model AttendanceRecord {
+  id         String           @id @default(uuid())
+  userId     String
+  date       DateTime
+  checkInAt  DateTime?
+  checkOutAt DateTime?
+  status     AttendanceStatus @default(PRESENT)
+
+  checkInLatitude  Decimal? @db.Decimal(10, 8)
+  checkInLongitude Decimal? @db.Decimal(11, 8)
+  checkInAccuracy  Int?
+  checkInAddress   String?
+  checkInPhotoId   String?
+  checkInIpAddress String?
+  checkInDevice    String?
+
+  checkOutLatitude  Decimal? @db.Decimal(10, 8)
+  checkOutLongitude Decimal? @db.Decimal(11, 8)
+  checkOutAccuracy  Int?
+  checkOutAddress   String?
+  checkOutPhotoId   String?
+  checkOutIpAddress String?
+  checkOutDevice    String?
+
+  workingMinutes Int @default(0)
+  lateMinutes    Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@map("attendance_records")
+}
+
+model Project {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  status      String    @default("ACTIVE")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members ProjectMember[]
+  tasks   Task[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String?
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+model Task {
+  id           String  @id @default(uuid())
+  title        String
+  description  String?
+  projectId    String?
+  assignedToId String
+  createdById  String
+
+  status      TaskStatus   @default(PENDING)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project    Project? @relation(fields: [projectId], references: [id])
+  assignedTo User     @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdBy  User     @relation("CreatedTasks", fields: [createdById], references: [id])
+
+  comments TaskComment[]
+
+  @@map("tasks")
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  comment   String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("task_comments")
+}
+
+model FileAsset {
+  id           String   @id @default(uuid())
+  uploadedById String
+  fileName     String
+  fileUrl      String
+  fileType     String
+  fileSize     Int?
+  publicId     String?
+  relatedType  String?
+  relatedId    String?
+  createdAt    DateTime @default(now())
+
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  @@map("file_assets")
+}
+
+model EmployeeStatusHistory {
+  id            String    @id @default(uuid())
+  employeeId    String
+  action        String
+  reason        String?
+  effectiveDate DateTime?
+  actionById    String
+  createdAt     DateTime  @default(now())
+
+  employee User @relation("EmployeeStatusUser", fields: [employeeId], references: [id])
+  actionBy User @relation("EmployeeStatusActionBy", fields: [actionById], references: [id])
+
+  @@map("employee_status_histories")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  module    String
+  recordId  String?
+  oldValues Json?
+  newValues Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}

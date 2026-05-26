@@ -1,0 +1,17 @@
+{
+  "name": "worksync-hrms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-ready HRMS platform with geo attendance, employee management, task management, and analytics.",
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "build:web": "npm run build --workspace=apps/web",
+    "build:api": "npm run build --workspace=apps/api"
+  },
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "packages/shared"
+  ]
+}
