@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { authenticateUser } from "../../middleware/auth.middleware";
 import { authorizeRoles } from "../../middleware/role.middleware";
+import { uploadSingleTaskAttachment } from "../../middleware/upload.middleware";
+
 import {
   createTaskController,
   deleteTaskController,
@@ -10,13 +12,13 @@ import {
   updateTaskController,
   updateTaskStatusController,
 } from "./task.controller";
+
 import {
   createTaskCommentController,
   deleteTaskCommentController,
   getTaskCommentsController,
 } from "./taskComment.controller";
 
-import { uploadSingleTaskAttachment } from "../../middleware/upload.middleware";
 import {
   getTaskAttachmentsController,
   uploadTaskAttachmentController,
@@ -29,24 +31,6 @@ const router = Router();
  * User must send valid JWT token in Authorization header.
  */
 router.use(authenticateUser);
-
-/**
- * Task attachment routes.
- *
- * These must also stay before "/:id" routes.
- */
-router.post(
-  "/:taskId/attachments",
-  authorizeRoles("EMPLOYEE", "MANAGER", "ADMIN", "SUPER_ADMIN"),
-  uploadSingleTaskAttachment,
-  uploadTaskAttachmentController
-);
-
-router.get(
-  "/:taskId/attachments",
-  authorizeRoles("EMPLOYEE", "MANAGER", "ADMIN", "SUPER_ADMIN"),
-  getTaskAttachmentsController
-);
 
 /**
  * Create task route.
@@ -113,6 +97,29 @@ router.delete(
   "/:taskId/comments/:commentId",
   authorizeRoles("EMPLOYEE", "MANAGER", "ADMIN", "SUPER_ADMIN"),
   deleteTaskCommentController
+);
+
+/**
+ * Task attachment routes.
+ *
+ * Important:
+ * These routes must be placed before "/:id" routes.
+ * Otherwise Express can treat "attachments" URLs as normal task id routes.
+ *
+ * Upload field name:
+ * - attachment
+ */
+router.post(
+  "/:taskId/attachments",
+  authorizeRoles("EMPLOYEE", "MANAGER", "ADMIN", "SUPER_ADMIN"),
+  uploadSingleTaskAttachment,
+  uploadTaskAttachmentController
+);
+
+router.get(
+  "/:taskId/attachments",
+  authorizeRoles("EMPLOYEE", "MANAGER", "ADMIN", "SUPER_ADMIN"),
+  getTaskAttachmentsController
 );
 
 /**
