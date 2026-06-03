@@ -24,6 +24,15 @@ export const attendanceLocationSchema = z.object({
 
   address: z.string().trim().max(255).optional().nullable(),
 });
+/**
+ * Service layer input types.
+ *
+ * Check-in and check-out dono same location schema use karte hain:
+ * latitude, longitude, accuracy, address
+ */
+export type CheckInAttendanceInput = z.infer<typeof attendanceLocationSchema>;
+
+export type CheckOutAttendanceInput = z.infer<typeof attendanceLocationSchema>;
 
 export const attendanceAdminQuerySchema = z.object({
   date: z.string().optional(),

@@ -13,11 +13,20 @@ import {
   updateOfficeLocationStatusService,
 } from "./officeLocation.service";
 
+/**
+ * Create office location.
+ *
+ * POST /api/office-locations
+ */
 export const createOfficeLocationController = async (
   req: Request,
   res: Response
 ) => {
   try {
+    /**
+     * Validation file schema is flat,
+     * so we directly parse req.body.
+     */
     const validatedData = createOfficeLocationSchema.parse(req.body);
 
     const officeLocation = await createOfficeLocationService(validatedData);
@@ -37,6 +46,11 @@ export const createOfficeLocationController = async (
   }
 };
 
+/**
+ * Get all office locations.
+ *
+ * GET /api/office-locations
+ */
 export const getAllOfficeLocationsController = async (
   req: Request,
   res: Response
@@ -59,12 +73,25 @@ export const getAllOfficeLocationsController = async (
   }
 };
 
+/**
+ * Update office location.
+ *
+ * PATCH /api/office-locations/:id
+ */
 export const updateOfficeLocationController = async (
   req: Request,
   res: Response
 ) => {
   try {
+    /**
+     * req.params contains:
+     * { id: "..." }
+     */
     const { id } = officeLocationIdSchema.parse(req.params);
+
+    /**
+     * req.body contains editable fields.
+     */
     const validatedData = updateOfficeLocationSchema.parse(req.body);
 
     const officeLocation = await updateOfficeLocationService(id, validatedData);
@@ -84,12 +111,18 @@ export const updateOfficeLocationController = async (
   }
 };
 
+/**
+ * Activate / deactivate office location.
+ *
+ * PATCH /api/office-locations/:id/status
+ */
 export const updateOfficeLocationStatusController = async (
   req: Request,
   res: Response
 ) => {
   try {
     const { id } = officeLocationIdSchema.parse(req.params);
+
     const validatedData = updateOfficeLocationStatusSchema.parse(req.body);
 
     const officeLocation = await updateOfficeLocationStatusService(
@@ -112,6 +145,11 @@ export const updateOfficeLocationStatusController = async (
   }
 };
 
+/**
+ * Delete office location.
+ *
+ * DELETE /api/office-locations/:id
+ */
 export const deleteOfficeLocationController = async (
   req: Request,
   res: Response

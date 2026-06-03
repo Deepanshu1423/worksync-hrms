@@ -27,13 +27,25 @@ app.use(helmet());
  * CORS configuration
  * Frontend currently runs on http://localhost:3000
  */
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:9000",
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   })
 );
-
 /**
  * Request logger
  * Useful during development to see API requests in terminal.

@@ -160,6 +160,9 @@ model AttendanceRecord {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id])
+   checkInPhoto  FileAsset? @relation("AttendanceCheckInPhoto", fields: [checkInPhotoId], references: [id])
+  checkOutPhoto FileAsset? @relation("AttendanceCheckOutPhoto", fields: [checkOutPhotoId], references: [id])
+
 
   @@unique([userId, date])
   @@map("attendance_records")
@@ -230,7 +233,7 @@ model TaskComment {
 
   task Task @relation(fields: [taskId], references: [id])
   user User @relation(fields: [userId], references: [id])
-
+  
   @@map("task_comments")
 }
 
@@ -247,6 +250,8 @@ model FileAsset {
   createdAt    DateTime @default(now())
 
   uploadedBy User @relation(fields: [uploadedById], references: [id])
+    attendanceCheckInRecords  AttendanceRecord[] @relation("AttendanceCheckInPhoto")
+  attendanceCheckOutRecords AttendanceRecord[] @relation("AttendanceCheckOutPhoto")
 
   @@map("file_assets")
 }

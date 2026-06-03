@@ -7,6 +7,7 @@ import {
   checkOutController,
   getAdminAttendanceController,
   getMyAttendanceHistoryController,
+  getMyTodayAttendanceController,
   getManagerTeamAttendanceController,
 } from "./attendance.controller";
 
@@ -15,8 +16,25 @@ const router = Router();
 router.use(authenticateUser);
 
 /**
+ * Logged-in user can view today's attendance.
+ *
+ * Frontend route:
+ * GET /api/attendance/my-today
+ *
+ * Important:
+ * Is route ko /:id type route se hamesha upar rakhna.
+ */
+router.get(
+  "/my-today",
+  authorizeRoles("EMPLOYEE", "MANAGER", "ADMIN", "SUPER_ADMIN"),
+  getMyTodayAttendanceController
+);
+
+/**
  * Employee/Manager/Admin can mark their own attendance.
- * Photo is accepted with field name: photo
+ *
+ * Photo field name must be:
+ * photo
  */
 router.post(
   "/check-in",
@@ -42,13 +60,14 @@ router.get(
 );
 
 /**
- * Admin/HR can view all attendance records.
+ * Admin can view all attendance records.
  */
 router.get(
   "/admin",
   authorizeRoles("SUPER_ADMIN", "ADMIN"),
   getAdminAttendanceController
 );
+
 /**
  * Manager can view only their team attendance.
  */
@@ -57,4 +76,5 @@ router.get(
   authorizeRoles("MANAGER"),
   getManagerTeamAttendanceController
 );
+
 export default router;

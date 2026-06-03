@@ -5,6 +5,40 @@ import {
   UpdateOfficeLocationStatusInput,
 } from "./officeLocation.validation";
 
+/**
+ * Common response formatter.
+ *
+ * Backend DB field name is `allowedRadius`.
+ * Frontend UI uses `radiusMeters`.
+ *
+ * So we return both:
+ * - allowedRadius for backend consistency
+ * - radiusMeters for frontend display
+ */
+const formatOfficeLocationResponse = (location: {
+  id: string;
+  name: string;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+  allowedRadius: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}) => {
+  return {
+    ...location,
+    radiusMeters: location.allowedRadius,
+  };
+};
+
+/**
+ * Create office location.
+ *
+ * Note:
+ * This location is only reference data.
+ * Employee attendance is NOT restricted based on this radius.
+ */
 export const createOfficeLocationService = async (
   data: CreateOfficeLocationInput
 ) => {
@@ -21,16 +55,28 @@ export const createOfficeLocationService = async (
   const officeLocation = await prisma.officeLocation.create({
     data: {
       name: data.name,
-      address: data.address,
+      address: data.address || null,
       latitude: data.latitude,
       longitude: data.longitude,
-      allowedRadius: data.allowedRadius || 200,
+
+      /**
+       * If frontend does not send radius, use 200 meters as safe default.
+       */
+      allowedRadius: data.allowedRadius ?? 200,
+
+      /**
+       * New locations are active by default.
+       */
+      isActive: data.isActive ?? true,
     },
   });
 
-  return officeLocation;
+  return formatOfficeLocationResponse(officeLocation);
 };
 
+/**
+ * Get all office locations.
+ */
 export const getAllOfficeLocationsService = async () => {
   const officeLocations = await prisma.officeLocation.findMany({
     orderBy: {
@@ -49,9 +95,14 @@ export const getAllOfficeLocationsService = async () => {
     },
   });
 
-  return officeLocations;
+  return officeLocations.map((location) =>
+    formatOfficeLocationResponse(location)
+  );
 };
 
+/**
+ * Update office location.
+ */
 export const updateOfficeLocationService = async (
   id: string,
   data: UpdateOfficeLocationInput
@@ -66,6 +117,9 @@ export const updateOfficeLocationService = async (
     throw new Error("Office location not found");
   }
 
+  /**
+   * Check duplicate name only if name is being changed.
+   */
   if (data.name) {
     const duplicateLocation = await prisma.officeLocation.findFirst({
       where: {
@@ -94,9 +148,12 @@ export const updateOfficeLocationService = async (
     },
   });
 
-  return updatedOfficeLocation;
+  return formatOfficeLocationResponse(updatedOfficeLocation);
 };
 
+/**
+ * Activate / deactivate office location.
+ */
 export const updateOfficeLocationStatusService = async (
   id: string,
   data: UpdateOfficeLocationStatusInput
@@ -120,9 +177,12 @@ export const updateOfficeLocationStatusService = async (
     },
   });
 
-  return updatedOfficeLocation;
+  return formatOfficeLocationResponse(updatedOfficeLocation);
 };
 
+/**
+ * Delete office location.
+ */
 export const deleteOfficeLocationService = async (id: string) => {
   const officeLocation = await prisma.officeLocation.findUnique({
     where: {

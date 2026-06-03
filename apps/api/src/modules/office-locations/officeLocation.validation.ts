@@ -1,61 +1,114 @@
 import { z } from "zod";
 
+/**
+ * Office location id validation.
+ *
+ * Important:
+ * We are NOT using .uuid() here because your Prisma id may not be UUID format.
+ * We only check that id is a non-empty string.
+ *
+ * Controller uses:
+ * officeLocationIdSchema.parse(req.params)
+ */
+export const officeLocationIdSchema = z.object({
+  id: z.string().min(1, "Invalid office location id"),
+});
+
+/**
+ * Create office location validation.
+ *
+ * Controller uses:
+ * createOfficeLocationSchema.parse(req.body)
+ *
+ * allowedRadius is only for reference.
+ * Attendance is NOT blocked using this radius.
+ */
 export const createOfficeLocationSchema = z.object({
   name: z
     .string()
     .trim()
-    .min(2, "Office name must be at least 2 characters")
-    .max(100, "Office name must not exceed 100 characters"),
+    .min(2, "Location name must be at least 2 characters"),
 
-  address: z
-    .string()
-    .trim()
-    .min(5, "Address must be at least 5 characters")
-    .max(255, "Address must not exceed 255 characters"),
+  address: z.string().trim().optional().nullable(),
 
-  latitude: z
-    .number({
-      required_error: "Latitude is required",
-      invalid_type_error: "Latitude must be a number",
-    })
+  latitude: z.coerce
+    .number()
     .min(-90, "Latitude must be between -90 and 90")
     .max(90, "Latitude must be between -90 and 90"),
 
-  longitude: z
-    .number({
-      required_error: "Longitude is required",
-      invalid_type_error: "Longitude must be a number",
-    })
+  longitude: z.coerce
+    .number()
     .min(-180, "Longitude must be between -180 and 180")
     .max(180, "Longitude must be between -180 and 180"),
 
-  allowedRadius: z
-    .number({
-      invalid_type_error: "Allowed radius must be a number",
-    })
-    .int("Allowed radius must be an integer")
-    .min(50, "Allowed radius must be at least 50 meters")
-    .max(5000, "Allowed radius must not exceed 5000 meters")
+  allowedRadius: z.coerce
+    .number()
+    .int("Allowed radius must be a whole number")
+    .positive("Allowed radius must be greater than 0")
     .optional(),
+
+  isActive: z.boolean().optional(),
 });
 
-export const updateOfficeLocationSchema = createOfficeLocationSchema
-  .partial()
-  .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one field is required for update",
-  });
+/**
+ * Update office location validation.
+ *
+ * Controller uses:
+ * updateOfficeLocationSchema.parse(req.body)
+ *
+ * All fields are optional because edit may update selected values only.
+ */
+export const updateOfficeLocationSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Location name must be at least 2 characters")
+    .optional(),
 
+  address: z.string().trim().optional().nullable(),
+
+  latitude: z.coerce
+    .number()
+    .min(-90, "Latitude must be between -90 and 90")
+    .max(90, "Latitude must be between -90 and 90")
+    .optional(),
+
+  longitude: z.coerce
+    .number()
+    .min(-180, "Longitude must be between -180 and 180")
+    .max(180, "Longitude must be between -180 and 180")
+    .optional(),
+
+  allowedRadius: z.coerce
+    .number()
+    .int("Allowed radius must be a whole number")
+    .positive("Allowed radius must be greater than 0")
+    .optional(),
+
+  isActive: z.boolean().optional(),
+});
+
+/**
+ * Activate / deactivate office location validation.
+ *
+ * Controller uses:
+ * updateOfficeLocationStatusSchema.parse(req.body)
+ */
 export const updateOfficeLocationStatusSchema = z.object({
   isActive: z.boolean({
-    required_error: "Status is required",
-    invalid_type_error: "Status must be true or false",
+    message: "isActive must be true or false",
   }),
 });
 
-export const officeLocationIdSchema = z.object({
-  id: z.string().uuid("Invalid office location id"),
-});
+/**
+ * Delete office location validation.
+ * Same schema as id validation.
+ */
+export const deleteOfficeLocationSchema = officeLocationIdSchema;
 
+/**
+ * Export input types for service layer.
+ */
 export type CreateOfficeLocationInput = z.infer<
   typeof createOfficeLocationSchema
 >;
