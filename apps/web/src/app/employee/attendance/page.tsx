@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ElementType,
 } from "react";
 import { isAxiosError } from "axios";
 import { motion } from "framer-motion";
@@ -15,15 +16,20 @@ import {
   Camera,
   CheckCircle2,
   Clock3,
+  ClipboardList,
   ExternalLink,
+  History,
   LayoutDashboard,
   Loader2,
   LocateFixed,
   LogOut,
   MapPin,
   RefreshCcw,
+  ShieldCheck,
+  Sparkles,
   Timer,
   Upload,
+  UserRound,
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -62,9 +68,6 @@ type CurrentLocation = {
   accuracy: number | null;
 };
 
-/**
- * Reads logged-in user from localStorage.
- */
 function getStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
 
@@ -79,10 +82,6 @@ function getStoredUser(): AuthUser | null {
   }
 }
 
-/**
- * Converts backend/API errors into clean user-friendly messages.
- * This prevents raw Prisma/Zod/backend errors from showing in toast.
- */
 function getApiErrorMessage(error: unknown, fallback: string) {
   if (!isAxiosError<ApiErrorResponse>(error)) {
     return fallback;
@@ -95,18 +94,9 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   const statusCode = error.response.status;
   const data = error.response.data;
 
-  if (statusCode === 401) {
-    return "Your session has expired. Please login again.";
-  }
-
-  if (statusCode === 403) {
-    return "You do not have permission to perform this action.";
-  }
-
-  if (statusCode === 404) {
-    return "Attendance API route not found. Please check backend routes.";
-  }
-
+  if (statusCode === 401) return "Your session has expired. Please login again.";
+  if (statusCode === 403) return "You do not have permission to perform this action.";
+  if (statusCode === 404) return "Attendance API route not found. Please check backend routes.";
   if (statusCode >= 500) {
     return "Server error while processing attendance. Please try again after some time.";
   }
@@ -144,9 +134,7 @@ function getApiErrorMessage(error: unknown, fallback: string) {
     }
   }
 
-  if (Array.isArray(data?.message)) {
-    return data.message[0] || fallback;
-  }
+  if (Array.isArray(data?.message)) return data.message[0] || fallback;
 
   if (typeof data?.message === "string") {
     const message = data.message;
@@ -201,16 +189,11 @@ function getApiErrorMessage(error: unknown, fallback: string) {
     return message;
   }
 
-  if (typeof data?.error === "string") {
-    return data.error;
-  }
+  if (typeof data?.error === "string") return data.error;
 
   return fallback;
 }
 
-/**
- * Formats date-time into readable UI format.
- */
 function formatDateTime(value?: string | null) {
   if (!value) return "—";
 
@@ -220,9 +203,6 @@ function formatDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
-/**
- * Converts working minutes into readable format.
- */
 function formatMinutes(minutes?: number | null) {
   if (!minutes || minutes <= 0) return "0 min";
 
@@ -234,19 +214,18 @@ function formatMinutes(minutes?: number | null) {
   return `${hours}h ${remainingMinutes}m`;
 }
 
-/**
- * Builds Google Maps link from latitude and longitude.
- */
-function getMapUrl(latitude?: number | null, longitude?: number | null) {
+function getMapUrl(
+  latitude?: number | string | null,
+  longitude?: number | string | null
+) {
   if (latitude === null || latitude === undefined) return "";
   if (longitude === null || longitude === undefined) return "";
 
-  return `https://www.google.com/maps?q=${latitude},${longitude}`;
+  return `https://www.google.com/maps?q=${Number(latitude)},${Number(
+    longitude
+  )}`;
 }
 
-/**
- * Attendance status badge style.
- */
 function getAttendanceStatusBadgeClass(status?: string | null) {
   if (status === "PRESENT") {
     return "border-emerald-300/20 bg-emerald-300/10 text-emerald-200";
@@ -267,17 +246,63 @@ function getAttendanceStatusBadgeClass(status?: string | null) {
   return "border-white/10 bg-white/5 text-white/70";
 }
 
-/**
- * Loading skeleton.
- */
 function EmployeeAttendanceLoading() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
-      <section className="mx-auto max-w-6xl space-y-6">
-        <Skeleton className="h-40 rounded-[2rem] bg-white/10" />
-        <Skeleton className="h-80 rounded-[2rem] bg-white/10" />
+      <section className="mx-auto max-w-7xl space-y-6">
+        <Skeleton className="h-48 rounded-[2rem] bg-white/10" />
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-32 rounded-3xl bg-white/10" />
+          ))}
+        </div>
+
+        <Skeleton className="h-96 rounded-[2rem] bg-white/10" />
       </section>
     </main>
+  );
+}
+
+function AttendanceInfoCard({
+  label,
+  value,
+  description,
+  icon: Icon,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  description: string;
+  icon: ElementType;
+  tone?: "default" | "success" | "warning" | "danger" | "info";
+}) {
+  const toneClass = {
+    default: "bg-amber-300/10 text-amber-300",
+    success: "bg-emerald-300/10 text-emerald-300",
+    warning: "bg-orange-300/10 text-orange-300",
+    danger: "bg-red-300/10 text-red-300",
+    info: "bg-blue-300/10 text-blue-200",
+  };
+
+  return (
+    <Card className="group overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+      <CardContent className="relative p-5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-300/5 blur-2xl transition group-hover:bg-amber-300/10" />
+
+        <div
+          className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl ${toneClass[tone]}`}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+
+        <p className="text-sm font-semibold text-white/55">{label}</p>
+        <p className="mt-1 break-words text-xl font-black text-white">
+          {value}
+        </p>
+        <p className="mt-2 text-xs leading-5 text-white/45">{description}</p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -287,10 +312,6 @@ export default function EmployeeAttendancePage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  /**
-   * Do not read localStorage directly in initial state.
-   * This prevents hydration mismatch.
-   */
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isPageReady, setIsPageReady] = useState(false);
 
@@ -311,9 +332,6 @@ export default function EmployeeAttendancePage() {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /**
-   * Client-side role protection.
-   */
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const token = localStorage.getItem("worksync_access_token");
@@ -332,6 +350,11 @@ export default function EmployeeAttendancePage() {
           return;
         }
 
+        if (storedUser.role === "MANAGER") {
+          router.replace("/manager/dashboard");
+          return;
+        }
+
         router.replace("/login");
         return;
       }
@@ -345,15 +368,9 @@ export default function EmployeeAttendancePage() {
     };
   }, [router]);
 
-  /**
-   * Fetch today's attendance record manually.
-   * Used by Refresh button also.
-   */
   const fetchTodayAttendance = useCallback(async (showLoader = true) => {
     try {
-      if (showLoader) {
-        setIsLoading(true);
-      }
+      if (showLoader) setIsLoading(true);
 
       const record = await getMyTodayAttendance();
       setAttendanceRecord(record);
@@ -366,9 +383,6 @@ export default function EmployeeAttendancePage() {
     }
   }, []);
 
-  /**
-   * Load attendance data after employee session is ready.
-   */
   useEffect(() => {
     if (!isPageReady || !user || user.role !== "EMPLOYEE") return;
 
@@ -401,18 +415,12 @@ export default function EmployeeAttendancePage() {
     };
   }, [isPageReady, user]);
 
-  /**
-   * Attach camera stream to video element whenever camera opens.
-   */
   useEffect(() => {
     if (!isCameraOpen || !cameraStream || !videoRef.current) return;
 
     videoRef.current.srcObject = cameraStream;
   }, [isCameraOpen, cameraStream]);
 
-  /**
-   * Stop camera when page unmounts or stream changes.
-   */
   useEffect(() => {
     return () => {
       if (cameraStream) {
@@ -421,9 +429,6 @@ export default function EmployeeAttendancePage() {
     };
   }, [cameraStream]);
 
-  /**
-   * Determines which action is allowed.
-   */
   const attendanceAction = useMemo(() => {
     if (!attendanceRecord) {
       return {
@@ -448,12 +453,6 @@ export default function EmployeeAttendancePage() {
     };
   }, [attendanceRecord]);
 
-  /**
-   * Get browser current location.
-   *
-   * Employee can check-in/check-out from anywhere.
-   * We only store the actual location for Admin/HR visibility.
-   */
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       toast.error("Geolocation is not supported by this browser.");
@@ -502,9 +501,6 @@ export default function EmployeeAttendancePage() {
     );
   };
 
-  /**
-   * Select/upload photo proof from device.
-   */
   const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
 
@@ -527,18 +523,12 @@ export default function EmployeeAttendancePage() {
       URL.revokeObjectURL(photoPreview);
     }
 
-    const previewUrl = URL.createObjectURL(selectedFile);
-
     setPhoto(selectedFile);
-    setPhotoPreview(previewUrl);
+    setPhotoPreview(URL.createObjectURL(selectedFile));
 
     toast.success("Photo selected successfully.");
   };
 
-  /**
-   * Opens device camera.
-   * Camera works on localhost and HTTPS.
-   */
   const handleOpenCamera = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
       toast.error("Camera is not supported by this browser.");
@@ -560,9 +550,6 @@ export default function EmployeeAttendancePage() {
     }
   };
 
-  /**
-   * Stops camera stream.
-   */
   const handleCloseCamera = () => {
     if (cameraStream) {
       cameraStream.getTracks().forEach((track) => track.stop());
@@ -572,10 +559,6 @@ export default function EmployeeAttendancePage() {
     setIsCameraOpen(false);
   };
 
-  /**
-   * Captures current camera frame and converts it into File.
-   * Same photo field is sent to backend during check-in/check-out.
-   */
   const handleCapturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) {
       toast.error("Camera is not ready.");
@@ -616,10 +599,8 @@ export default function EmployeeAttendancePage() {
           }
         );
 
-        const previewUrl = URL.createObjectURL(blob);
-
         setPhoto(capturedFile);
-        setPhotoPreview(previewUrl);
+        setPhotoPreview(URL.createObjectURL(blob));
 
         toast.success("Photo captured successfully.");
         handleCloseCamera();
@@ -629,9 +610,6 @@ export default function EmployeeAttendancePage() {
     );
   };
 
-  /**
-   * Removes selected/captured photo.
-   */
   const handleRemovePhoto = () => {
     if (photoPreview) {
       URL.revokeObjectURL(photoPreview);
@@ -641,17 +619,19 @@ export default function EmployeeAttendancePage() {
     setPhotoPreview("");
   };
 
-  /**
-   * Submit check-in or check-out.
-   */
   const handleSubmitAttendance = async () => {
+    if (attendanceAction.type === "COMPLETED") {
+      toast.error("Today's attendance is already completed.");
+      return;
+    }
+
     if (!currentLocation) {
       toast.error("Please capture your current location first.");
       return;
     }
 
-    if (attendanceAction.type === "COMPLETED") {
-      toast.error("Today's attendance is already completed.");
+    if (!photo) {
+      toast.error("Please upload or capture photo proof.");
       return;
     }
 
@@ -698,9 +678,6 @@ export default function EmployeeAttendancePage() {
     }
   };
 
-  /**
-   * Logout employee.
-   */
   const handleLogout = () => {
     clearAuthSession();
     router.replace("/login");
@@ -716,36 +693,35 @@ export default function EmployeeAttendancePage() {
     attendanceRecord?.checkOutLongitude
   );
 
-  /**
-   * First render will always show loading UI.
-   * This fixes hydration mismatch.
-   */
   if (!isPageReady || !user || user.role !== "EMPLOYEE" || isLoading) {
     return <EmployeeAttendanceLoading />;
   }
 
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
-      <section className="mx-auto max-w-6xl space-y-6">
-        {/* Header */}
+      <section className="mx-auto max-w-7xl space-y-6">
+        {/* Premium header */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
-          className="rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8"
+          className="relative overflow-hidden rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10"
         >
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-            <div>
-              <p className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-300">
-                <CalendarCheck className="h-4 w-4" />
-                Employee Attendance
-              </p>
+          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+          <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+            <div>
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+                <Sparkles className="h-4 w-4" />
+                Employee Attendance
+              </div>
+
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
                 Check-in / Check-out
               </h1>
 
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/65">
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
                 Capture your current location and photo proof for attendance.
                 You can check-in/check-out from anywhere; your actual location
                 will be visible to Admin/HR.
@@ -760,6 +736,15 @@ export default function EmployeeAttendancePage() {
               >
                 <LayoutDashboard className="mr-2 h-4 w-4" />
                 Dashboard
+              </Button>
+
+              <Button
+                onClick={() => router.push("/employee/attendance/history")}
+                variant="outline"
+                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
+              >
+                <History className="mr-2 h-4 w-4" />
+                History
               </Button>
 
               <Button
@@ -783,115 +768,117 @@ export default function EmployeeAttendancePage() {
           </div>
         </motion.div>
 
-        {/* User + Today Status */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-            <CardContent className="p-5">
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
-                <CheckCircle2 className="h-5 w-5" />
-              </div>
+        {/* Summary cards */}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <AttendanceInfoCard
+            label="Today Status"
+            value={
+              attendanceRecord?.status
+                ? attendanceRecord.status.replaceAll("_", " ")
+                : "Not Marked"
+            }
+            description="Current attendance status for today."
+            icon={CalendarCheck}
+            tone={attendanceRecord ? "success" : "warning"}
+          />
 
-              <p className="text-sm text-white/55">Logged In As</p>
-              <p className="mt-1 text-xl font-black text-white">
-                {user.fullName || "Employee"}
-              </p>
-              <p className="mt-1 text-sm text-white/45">
-                {user.employeeCode || user.role || "Employee"}
-              </p>
-            </CardContent>
-          </Card>
+          <AttendanceInfoCard
+            label="Check In"
+            value={formatDateTime(attendanceRecord?.checkInAt)}
+            description="Today's check-in time."
+            icon={Clock3}
+            tone="info"
+          />
 
-          <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-            <CardContent className="p-5">
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-300/10 text-emerald-300">
-                <Clock3 className="h-5 w-5" />
-              </div>
+          <AttendanceInfoCard
+            label="Check Out"
+            value={formatDateTime(attendanceRecord?.checkOutAt)}
+            description="Today's check-out time."
+            icon={Timer}
+            tone="default"
+          />
 
-              <p className="text-sm text-white/55">Check In</p>
-              <p className="mt-1 text-lg font-black text-white">
-                {formatDateTime(attendanceRecord?.checkInAt)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-            <CardContent className="p-5">
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-300/10 text-orange-300">
-                <Timer className="h-5 w-5" />
-              </div>
-
-              <p className="text-sm text-white/55">Check Out</p>
-              <p className="mt-1 text-lg font-black text-white">
-                {formatDateTime(attendanceRecord?.checkOutAt)}
-              </p>
-            </CardContent>
-          </Card>
+          <AttendanceInfoCard
+            label="Work Time"
+            value={formatMinutes(attendanceRecord?.workingMinutes)}
+            description="Total calculated working time."
+            icon={CheckCircle2}
+            tone="success"
+          />
         </div>
 
-        {/* Main action card */}
-        <Card className="overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-2xl shadow-black/25">
-          <CardContent className="p-5 sm:p-6">
-            <div className="flex flex-col justify-between gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-center">
-              <div>
-                <h2 className="text-2xl font-black text-white">
-                  Today&apos;s Attendance
-                </h2>
-                <p className="mt-1 text-sm text-white/50">
-                  Capture location and photo first, then submit your attendance.
-                </p>
+        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          {/* Attendance action */}
+          <Card className="overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-2xl shadow-black/25">
+            <CardContent className="p-5 sm:p-6">
+              <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+                <div>
+                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-200">
+                    <LocateFixed className="h-3.5 w-3.5" />
+                    Attendance Action
+                  </div>
+
+                  <h2 className="text-2xl font-black text-white">
+                    {attendanceAction.label}
+                  </h2>
+
+                  <p className="mt-2 text-sm leading-6 text-white/55">
+                    Capture location and photo first, then submit your
+                    attendance action.
+                  </p>
+                </div>
+
+                <Badge
+                  className={getAttendanceStatusBadgeClass(
+                    attendanceRecord?.status || "NOT_MARKED"
+                  )}
+                >
+                  {attendanceRecord?.status
+                    ? attendanceRecord.status.replaceAll("_", " ")
+                    : "NOT MARKED"}
+                </Badge>
               </div>
 
-              <Badge
-                className={getAttendanceStatusBadgeClass(
-                  attendanceRecord?.status || "NOT_MARKED"
-                )}
-              >
-                {attendanceRecord?.status
-                  ? attendanceRecord.status.replaceAll("_", " ")
-                  : "NOT MARKED"}
-              </Badge>
-            </div>
-
-            <div className="grid gap-6 pt-6 lg:grid-cols-2">
-              {/* Left: current location and photo */}
-              <div className="space-y-4">
-                {/* Current location */}
-                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {/* Location */}
+                <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5">
                   <div className="mb-4 flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
-                      <LocateFixed className="h-5 w-5" />
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-300/10 text-emerald-300">
+                      <MapPin className="h-5 w-5" />
                     </div>
 
                     <div>
-                      <p className="font-bold text-white">Current Location</p>
+                      <h3 className="font-black text-white">
+                        Current Location
+                      </h3>
                       <p className="text-xs text-white/45">
-                        Required for check-in/check-out
+                        Required for attendance proof.
                       </p>
                     </div>
                   </div>
 
                   {currentLocation ? (
-                    <div className="space-y-2 text-sm text-white/65">
-                      <p>
-                        Latitude:{" "}
-                        <span className="font-semibold text-white">
-                          {currentLocation.latitude}
-                        </span>
-                      </p>
-                      <p>
-                        Longitude:{" "}
-                        <span className="font-semibold text-white">
-                          {currentLocation.longitude}
-                        </span>
-                      </p>
-                      <p>
-                        Accuracy:{" "}
-                        <span className="font-semibold text-white">
+                    <div className="space-y-3">
+                      <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm text-emerald-100">
+                        <p className="font-bold">Location captured</p>
+                        <p className="mt-1 text-xs leading-5 text-emerald-100/75">
+                          Lat: {currentLocation.latitude.toFixed(6)}
+                          <br />
+                          Long: {currentLocation.longitude.toFixed(6)}
+                          <br />
+                          Accuracy:{" "}
                           {currentLocation.accuracy
                             ? `${Math.round(currentLocation.accuracy)}m`
                             : "—"}
-                        </span>
-                      </p>
+                        </p>
+                      </div>
+
+                      <textarea
+                        value={address}
+                        onChange={(event) => setAddress(event.target.value)}
+                        placeholder="Address / location note"
+                        className="min-h-24 w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-amber-300/30"
+                      />
 
                       <a
                         href={getMapUrl(
@@ -907,16 +894,17 @@ export default function EmployeeAttendancePage() {
                       </a>
                     </div>
                   ) : (
-                    <p className="text-sm text-white/45">
-                      Location not captured yet.
-                    </p>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-sm leading-6 text-white/50">
+                      Location not captured yet. Click the button below to get
+                      your current GPS location.
+                    </div>
                   )}
 
                   <Button
                     type="button"
                     onClick={handleGetLocation}
-                    disabled={isGettingLocation}
-                    className="mt-5 w-full rounded-xl bg-amber-400 font-bold text-black hover:bg-amber-300"
+                    disabled={isGettingLocation || attendanceAction.disabled}
+                    className="mt-4 h-11 w-full rounded-xl bg-emerald-400 font-black text-black hover:bg-emerald-300 disabled:opacity-60"
                   >
                     {isGettingLocation ? (
                       <>
@@ -925,199 +913,346 @@ export default function EmployeeAttendancePage() {
                       </>
                     ) : (
                       <>
-                        <MapPin className="mr-2 h-4 w-4" />
-                        Capture Current Location
+                        <LocateFixed className="mr-2 h-4 w-4" />
+                        Capture Location
                       </>
                     )}
                   </Button>
                 </div>
 
-                {/* Photo proof */}
-                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+                {/* Photo */}
+                <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5">
                   <div className="mb-4 flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
                       <Camera className="h-5 w-5" />
                     </div>
 
                     <div>
-                      <p className="font-bold text-white">Photo Proof</p>
+                      <h3 className="font-black text-white">Photo Proof</h3>
                       <p className="text-xs text-white/45">
-                        Upload photo or capture using camera
+                        Upload image or capture live photo.
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  {photoPreview ? (
+                    <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/30">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photoPreview}
+                        alt="Attendance proof preview"
+                        className="h-64 w-full object-cover"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={handleRemovePhoto}
+                        className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-xl bg-red-500 text-white shadow-lg"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex h-64 items-center justify-center rounded-3xl border border-dashed border-white/15 bg-white/[0.025] text-center">
+                      <div>
+                        <Camera className="mx-auto h-8 w-8 text-amber-300" />
+                        <p className="mt-3 text-sm font-bold text-white">
+                          No photo selected
+                        </p>
+                        <p className="mt-1 text-xs text-white/45">
+                          Upload image or open camera.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <label className="flex h-11 cursor-pointer items-center justify-center rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 text-sm font-bold text-amber-100 hover:bg-amber-300/20">
                       <Upload className="mr-2 h-4 w-4" />
-                      Upload Photo
+                      Upload
                       <input
                         type="file"
                         accept="image/*"
                         onChange={handlePhotoChange}
                         className="hidden"
+                        disabled={attendanceAction.disabled}
                       />
                     </label>
 
                     <Button
                       type="button"
                       onClick={handleOpenCamera}
-                      className="h-11 rounded-xl bg-amber-400 font-bold text-black hover:bg-amber-300"
+                      disabled={attendanceAction.disabled}
+                      variant="outline"
+                      className="h-11 rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10 disabled:opacity-60"
                     >
                       <Camera className="mr-2 h-4 w-4" />
                       Open Camera
                     </Button>
                   </div>
-
-                  {photoPreview ? (
-                    <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-                      <div className="flex items-center justify-between border-b border-white/10 bg-black/20 px-4 py-2">
-                        <p className="text-sm font-bold text-white">
-                          Selected Photo
-                        </p>
-
-                        <button
-                          type="button"
-                          onClick={handleRemovePhoto}
-                          className="rounded-lg p-1 text-white/60 hover:bg-white/10 hover:text-white"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={photoPreview}
-                        alt="Attendance proof preview"
-                        className="h-56 w-full object-cover"
-                      />
-                    </div>
-                  ) : null}
-
-                  {isCameraOpen ? (
-                    <div className="mt-4 rounded-2xl border border-amber-300/20 bg-black/40 p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <p className="text-sm font-bold text-white">
-                          Camera Preview
-                        </p>
-
-                        <button
-                          type="button"
-                          onClick={handleCloseCamera}
-                          className="rounded-lg p-1 text-white/60 hover:bg-white/10 hover:text-white"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="h-64 w-full rounded-xl bg-black object-cover"
-                      />
-
-                      <canvas ref={canvasRef} className="hidden" />
-
-                      <Button
-                        type="button"
-                        onClick={handleCapturePhoto}
-                        className="mt-4 h-11 w-full rounded-xl bg-amber-400 font-bold text-black hover:bg-amber-300"
-                      >
-                        <Camera className="mr-2 h-4 w-4" />
-                        Capture Photo
-                      </Button>
-                    </div>
-                  ) : null}
                 </div>
               </div>
 
-              {/* Right: attendance details */}
-              <div className="space-y-4">
-                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-                  <h3 className="text-lg font-black text-white">
-                    Attendance Details
-                  </h3>
+              {isCameraOpen ? (
+                <div className="mt-6 rounded-3xl border border-amber-300/20 bg-black/30 p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h3 className="font-black text-white">Camera Preview</h3>
 
-                  <div className="mt-5 space-y-4">
-                    <div>
-                      <p className="text-sm text-white/40">Working Time</p>
-                      <p className="mt-1 font-bold text-white">
-                        {formatMinutes(attendanceRecord?.workingMinutes)}
-                      </p>
-                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleCloseCamera}
+                      variant="outline"
+                      className="h-9 rounded-xl border-red-300/20 bg-red-300/10 px-3 text-red-100 hover:bg-red-300/20"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      Close
+                    </Button>
+                  </div>
 
-                    <div>
-                      <p className="text-sm text-white/40">Late Time</p>
-                      <p className="mt-1 font-bold text-white">
-                        {formatMinutes(attendanceRecord?.lateMinutes)}
-                      </p>
-                    </div>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="max-h-[420px] w-full rounded-2xl bg-black object-cover"
+                  />
 
-                    <div>
-                      <p className="text-sm text-white/40">
-                        Check-in Location
+                  <canvas ref={canvasRef} className="hidden" />
+
+                  <Button
+                    type="button"
+                    onClick={handleCapturePhoto}
+                    className="mt-4 h-11 w-full rounded-xl bg-amber-400 font-black text-black hover:bg-amber-300"
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Capture Photo
+                  </Button>
+                </div>
+              ) : null}
+
+              <Button
+                type="button"
+                onClick={handleSubmitAttendance}
+                disabled={
+                  isSubmitting ||
+                  attendanceAction.disabled ||
+                  !currentLocation ||
+                  !photo
+                }
+                className="mt-6 h-12 w-full rounded-xl bg-amber-400 text-base font-black text-black hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <CalendarCheck className="mr-2 h-5 w-5" />
+                    {attendanceAction.label}
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Today's record */}
+          <Card className="overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-2xl shadow-black/25">
+            <CardContent className="p-5 sm:p-6">
+              <div className="mb-6 flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+                  <UserRound className="h-5 w-5" />
+                </div>
+
+                <div>
+                  <h2 className="text-xl font-black text-white">
+                    Today's Record
+                  </h2>
+                  <p className="text-sm text-white/50">
+                    Current employee attendance status.
+                  </p>
+                </div>
+              </div>
+
+              {attendanceRecord ? (
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-4">
+                    <p className="text-xs font-bold uppercase tracking-wide text-white/40">
+                      Status
+                    </p>
+
+                    <Badge
+                      className={`mt-2 ${getAttendanceStatusBadgeClass(
+                        attendanceRecord.status
+                      )}`}
+                    >
+                      {attendanceRecord.status?.replaceAll("_", " ")}
+                    </Badge>
+                  </div>
+
+                  <div className="grid gap-3">
+                    <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-4">
+                      <p className="text-xs font-bold uppercase tracking-wide text-white/40">
+                        Check In
                       </p>
+
+                      <p className="mt-2 font-bold text-white">
+                        {formatDateTime(attendanceRecord.checkInAt)}
+                      </p>
+
                       {checkInMapUrl ? (
                         <a
                           href={checkInMapUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="mt-1 inline-flex items-center font-bold text-amber-300 hover:text-amber-200"
+                          className="mt-3 inline-flex items-center rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-sm font-bold text-emerald-100 hover:bg-emerald-300/20"
                         >
-                          Open Check-in Map
-                          <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                          <MapPin className="mr-2 h-4 w-4" />
+                          In Map
+                          <ExternalLink className="ml-2 h-3.5 w-3.5" />
                         </a>
-                      ) : (
-                        <p className="mt-1 text-white/55">—</p>
-                      )}
+                      ) : null}
                     </div>
 
-                    <div>
-                      <p className="text-sm text-white/40">
-                        Check-out Location
+                    <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-4">
+                      <p className="text-xs font-bold uppercase tracking-wide text-white/40">
+                        Check Out
                       </p>
+
+                      <p className="mt-2 font-bold text-white">
+                        {formatDateTime(attendanceRecord.checkOutAt)}
+                      </p>
+
                       {checkOutMapUrl ? (
                         <a
                           href={checkOutMapUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="mt-1 inline-flex items-center font-bold text-amber-300 hover:text-amber-200"
+                          className="mt-3 inline-flex items-center rounded-xl border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-sm font-bold text-emerald-100 hover:bg-emerald-300/20"
                         >
-                          Open Check-out Map
-                          <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                          <MapPin className="mr-2 h-4 w-4" />
+                          Out Map
+                          <ExternalLink className="ml-2 h-3.5 w-3.5" />
                         </a>
-                      ) : (
-                        <p className="mt-1 text-white/55">—</p>
-                      )}
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-4">
+                      <p className="text-xs font-bold uppercase tracking-wide text-white/40">
+                        Working Details
+                      </p>
+
+                      <p className="mt-2 font-bold text-white">
+                        Working: {formatMinutes(attendanceRecord.workingMinutes)}
+                      </p>
+
+                      <p className="mt-1 text-sm text-white/50">
+                        Late: {formatMinutes(attendanceRecord.lateMinutes)}
+                      </p>
                     </div>
                   </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {attendanceRecord.checkInPhoto?.fileUrl ? (
+                      <a
+                        href={attendanceRecord.checkInPhoto.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-11 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 text-sm font-bold text-amber-100 hover:bg-amber-300/20"
+                      >
+                        <Camera className="mr-2 h-4 w-4" />
+                        In Photo
+                      </a>
+                    ) : null}
+
+                    {attendanceRecord.checkOutPhoto?.fileUrl ? (
+                      <a
+                        href={attendanceRecord.checkOutPhoto.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-11 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 text-sm font-bold text-amber-100 hover:bg-amber-300/20"
+                      >
+                        <Camera className="mr-2 h-4 w-4" />
+                        Out Photo
+                      </a>
+                    ) : null}
+                  </div>
                 </div>
+              ) : (
+                <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-6 text-center">
+                  <CalendarCheck className="mx-auto h-10 w-10 text-amber-300" />
+                  <h3 className="mt-4 text-lg font-black text-white">
+                    Attendance not marked
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-white/50">
+                    Capture location and photo proof, then submit check-in.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-                <Button
-                  type="button"
-                  onClick={handleSubmitAttendance}
-                  disabled={attendanceAction.disabled || isSubmitting}
-                  className="h-12 w-full rounded-xl bg-amber-400 text-base font-black text-black hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    attendanceAction.label
-                  )}
-                </Button>
+        {/* Note */}
+        <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+          <CardContent className="p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
 
-                <p className="text-center text-xs leading-5 text-white/40">
-                  Location restriction is not applied. Your actual attendance
-                  location and photo proof will be saved for Admin/HR
-                  verification.
+              <div>
+                <h3 className="text-lg font-black text-white">
+                  Anywhere Attendance Enabled
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-white/55">
+                  Employee attendance can be marked from anywhere. The system
+                  saves actual GPS location and photo proof for Admin/HR
+                  verification, but does not block attendance based on office
+                  radius.
                 </p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick links */}
+        <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+          <CardContent className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
+            <Button
+              onClick={() => router.push("/employee/dashboard")}
+              className="h-11 rounded-xl bg-amber-400 font-bold text-black hover:bg-amber-300"
+            >
+              <LayoutDashboard className="mr-2 h-4 w-4" />
+              Dashboard
+            </Button>
+
+            <Button
+              onClick={() => router.push("/employee/attendance/history")}
+              variant="outline"
+              className="h-11 rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10"
+            >
+              <History className="mr-2 h-4 w-4" />
+              History
+            </Button>
+
+            <Button
+              onClick={() => router.push("/employee/tasks")}
+              variant="outline"
+              className="h-11 rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10"
+            >
+              <ClipboardList className="mr-2 h-4 w-4" />
+              My Tasks
+            </Button>
+
+            <Button
+              onClick={() => router.push("/employee/profile")}
+              variant="outline"
+              className="h-11 rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10"
+            >
+              <UserRound className="mr-2 h-4 w-4" />
+              Profile
+            </Button>
           </CardContent>
         </Card>
       </section>

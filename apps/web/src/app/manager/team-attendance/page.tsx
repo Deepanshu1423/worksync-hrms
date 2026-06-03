@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ElementType } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ElementType,
+} from "react";
 import { isAxiosError } from "axios";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -13,11 +19,14 @@ import {
   ChevronsRight,
   Clock3,
   ExternalLink,
+  Filter,
   LayoutDashboard,
   LogOut,
   MapPin,
   RefreshCcw,
   Search,
+  ShieldCheck,
+  Sparkles,
   Timer,
   UserCheck,
   UsersRound,
@@ -82,7 +91,6 @@ function getStoredUser(): AuthUser | null {
 
 /**
  * Converts backend/API errors into clean user-friendly messages.
- * This prevents raw backend/Zod/Prisma errors from showing in toast.
  */
 function getApiErrorMessage(error: unknown, fallback: string) {
   if (!isAxiosError<ApiErrorResponse>(error)) {
@@ -200,11 +208,16 @@ function getDateInputValue(value?: string | null) {
 /**
  * Builds Google Maps link from latitude and longitude.
  */
-function getMapUrl(latitude?: number | string | null, longitude?: number | string | null) {
+function getMapUrl(
+  latitude?: number | string | null,
+  longitude?: number | string | null
+) {
   if (latitude === null || latitude === undefined) return "";
   if (longitude === null || longitude === undefined) return "";
 
-  return `https://www.google.com/maps?q=${Number(latitude)},${Number(longitude)}`;
+  return `https://www.google.com/maps?q=${Number(latitude)},${Number(
+    longitude
+  )}`;
 }
 
 /**
@@ -231,6 +244,28 @@ function getAttendanceStatusBadgeClass(status?: string | null) {
 }
 
 /**
+ * Creates a stable key for duplicate checking.
+ *
+ * Primary unique key should be record.id.
+ * Fallback key prevents duplicate UI if backend accidentally sends records
+ * without id.
+ */
+function getAttendanceUniqueKey(record: AttendanceRecord) {
+  return (
+    record.id ||
+    [
+      record.user?.id,
+      record.user?.employeeCode,
+      record.date,
+      record.checkInAt,
+      record.checkOutAt,
+    ]
+      .filter(Boolean)
+      .join("-")
+  );
+}
+
+/**
  * Loading skeleton.
  * First render loading UI prevents hydration mismatch.
  */
@@ -238,10 +273,10 @@ function ManagerTeamAttendanceLoading() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
       <section className="mx-auto max-w-7xl space-y-6">
-        <Skeleton className="h-44 rounded-[2rem] bg-white/10" />
+        <Skeleton className="h-48 rounded-[2rem] bg-white/10" />
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
             <Skeleton key={index} className="h-32 rounded-3xl bg-white/10" />
           ))}
         </div>
@@ -258,34 +293,73 @@ function ManagerTeamAttendanceLoading() {
 function AttendanceSummaryCard({
   label,
   value,
+  description,
   icon: Icon,
   tone = "default",
 }: {
   label: string;
   value: number | string;
+  description: string;
   icon: ElementType;
-  tone?: "default" | "success" | "warning" | "danger";
+  tone?: "default" | "success" | "warning" | "danger" | "info";
 }) {
   const toneClass = {
     default: "bg-amber-300/10 text-amber-300",
     success: "bg-emerald-300/10 text-emerald-300",
     warning: "bg-orange-300/10 text-orange-300",
     danger: "bg-red-300/10 text-red-300",
+    info: "bg-blue-300/10 text-blue-200",
   };
 
   return (
-    <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-      <CardContent className="p-5">
+    <Card className="group overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+      <CardContent className="relative p-5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-300/5 blur-2xl transition group-hover:bg-amber-300/10" />
+
         <div
           className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl ${toneClass[tone]}`}
         >
           <Icon className="h-5 w-5" />
         </div>
 
-        <p className="text-sm text-white/55">{label}</p>
+        <p className="text-sm font-semibold text-white/55">{label}</p>
         <p className="mt-1 text-2xl font-black text-white">{value}</p>
+        <p className="mt-2 text-xs leading-5 text-white/45">{description}</p>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Empty state for attendance list.
+ */
+function EmptyAttendanceState({ clearFilters }: { clearFilters: () => void }) {
+  return (
+    <div className="p-10">
+      <div className="mx-auto max-w-md rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+          <UsersRound className="h-6 w-6" />
+        </div>
+
+        <h3 className="text-xl font-black text-white">
+          No team attendance found
+        </h3>
+
+        <p className="mt-2 text-sm leading-6 text-white/50">
+          No team attendance matched your current search, status or date filter.
+          Clear filters and try again.
+        </p>
+
+        <Button
+          type="button"
+          onClick={clearFilters}
+          variant="outline"
+          className="mt-5 rounded-xl border-amber-200/30 bg-white/5 text-white hover:bg-white/10"
+        >
+          Clear Filters
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -353,94 +427,91 @@ export default function ManagerTeamAttendancePage() {
   }, [router]);
 
   /**
+   * Fetch team attendance records from backend.
+   */
+  const fetchTeamAttendance = useCallback(async (showSuccessToast = false) => {
+    try {
+      setIsRefreshing(showSuccessToast);
+
+      const records = await getManagerTeamAttendanceRecords();
+
+      setAttendanceRecords(records);
+
+      if (showSuccessToast) {
+        toast.success("Team attendance refreshed successfully.");
+      }
+    } catch (error: unknown) {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          "Failed to fetch team attendance. Please try again."
+        )
+      );
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  /**
    * Load team attendance records after manager session is ready.
    */
   useEffect(() => {
     if (!isPageReady || !user || user.role !== "MANAGER") return;
 
-    let isMounted = true;
-
-    const loadTeamAttendance = async () => {
-      try {
-        const records = await getManagerTeamAttendanceRecords();
-
-        if (isMounted) {
-          setAttendanceRecords(records);
-        }
-      } catch (error: unknown) {
-        if (isMounted) {
-          toast.error(
-            getApiErrorMessage(
-              error,
-              "Failed to fetch team attendance. Please try again."
-            )
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadTeamAttendance();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isPageReady, user]);
+    void fetchTeamAttendance(false);
+  }, [fetchTeamAttendance, isPageReady, user]);
 
   /**
-   * Refresh team attendance manually.
+   * Duplicate-safe records.
+   *
+   * Important:
+   * Always use this array for summary, filters, pagination and display.
    */
-  const handleRefresh = async () => {
-    try {
-      setIsRefreshing(true);
+  const uniqueAttendanceRecords = useMemo(() => {
+    const recordMap = new Map<string, AttendanceRecord>();
 
-      const records = await getManagerTeamAttendanceRecords();
+    attendanceRecords.forEach((record) => {
+      const uniqueKey = getAttendanceUniqueKey(record);
 
-      setAttendanceRecords(records);
-      toast.success("Team attendance refreshed successfully.");
-    } catch (error: unknown) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          "Failed to refresh team attendance. Please try again."
-        )
-      );
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
+      if (!uniqueKey) return;
+
+      if (!recordMap.has(uniqueKey)) {
+        recordMap.set(uniqueKey, record);
+      }
+    });
+
+    return Array.from(recordMap.values());
+  }, [attendanceRecords]);
 
   /**
    * Summary calculation.
    */
   const attendanceSummary = useMemo(() => {
-    const presentCount = attendanceRecords.filter(
+    const presentCount = uniqueAttendanceRecords.filter(
       (record) => record.status === "PRESENT"
     ).length;
 
-    const lateCount = attendanceRecords.filter(
+    const lateCount = uniqueAttendanceRecords.filter(
       (record) => record.status === "LATE"
     ).length;
 
-    const absentCount = attendanceRecords.filter(
+    const absentCount = uniqueAttendanceRecords.filter(
       (record) => record.status === "ABSENT"
     ).length;
 
-    const completedCount = attendanceRecords.filter(
+    const completedCount = uniqueAttendanceRecords.filter(
       (record) => record.checkInAt && record.checkOutAt
     ).length;
 
     return {
-      total: attendanceRecords.length,
+      total: uniqueAttendanceRecords.length,
       present: presentCount,
       late: lateCount,
       absent: absentCount,
       completed: completedCount,
     };
-  }, [attendanceRecords]);
+  }, [uniqueAttendanceRecords]);
 
   /**
    * Search + status + date filtering.
@@ -448,7 +519,7 @@ export default function ManagerTeamAttendancePage() {
   const filteredAttendanceRecords = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
 
-    return attendanceRecords.filter((record) => {
+    return uniqueAttendanceRecords.filter((record) => {
       const matchesStatus =
         statusFilter === "ALL" ? true : record.status === statusFilter;
 
@@ -469,18 +540,18 @@ export default function ManagerTeamAttendancePage() {
         formatDateTime(record.checkOutAt),
         record.checkInAddress,
         record.checkOutAddress,
+        String(record.workingMinutes ?? 0),
+        String(record.lateMinutes ?? 0),
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch = keyword
-        ? searchableText.includes(keyword)
-        : true;
+      const matchesSearch = keyword ? searchableText.includes(keyword) : true;
 
       return matchesStatus && matchesDate && matchesSearch;
     });
-  }, [attendanceRecords, searchTerm, statusFilter, dateFilter]);
+  }, [uniqueAttendanceRecords, searchTerm, statusFilter, dateFilter]);
 
   /**
    * Pagination calculation.
@@ -530,27 +601,31 @@ export default function ManagerTeamAttendancePage() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
       <section className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
+        {/* Premium header */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
-          className="rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8"
+          className="relative overflow-hidden rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10"
         >
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-            <div>
-              <p className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-300">
-                <UsersRound className="h-4 w-4" />
-                Manager Team Attendance
-              </p>
+          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
-                Team Attendance Records
+          <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+            <div>
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+                <Sparkles className="h-4 w-4" />
+                Manager Team Attendance
+              </div>
+
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
+                Team Attendance Monitor
               </h1>
 
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/65">
-                View your assigned team members&apos; attendance, check-in/check-out
-                time, location maps and uploaded photo proof.
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
+                View your assigned team attendance, check-in/check-out time,
+                photo proof, geo location, working minutes and attendance
+                status.
               </p>
             </div>
 
@@ -565,22 +640,17 @@ export default function ManagerTeamAttendancePage() {
               </Button>
 
               <Button
-                onClick={handleRefresh}
+                onClick={() => fetchTeamAttendance(true)}
                 disabled={isRefreshing}
                 variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
+                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10 disabled:opacity-60"
               >
-                {isRefreshing ? (
-                  <>
-                    <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
-                    Refreshing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCcw className="mr-2 h-4 w-4" />
-                    Refresh
-                  </>
-                )}
+                <RefreshCcw
+                  className={`mr-2 h-4 w-4 ${
+                    isRefreshing ? "animate-spin" : ""
+                  }`}
+                />
+                Refresh
               </Button>
 
               <Button
@@ -596,16 +666,18 @@ export default function ManagerTeamAttendancePage() {
         </motion.div>
 
         {/* Summary cards */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <AttendanceSummaryCard
             label="Total Records"
             value={attendanceSummary.total}
-            icon={CalendarCheck}
+            description="Unique team attendance records."
+            icon={UsersRound}
           />
 
           <AttendanceSummaryCard
             label="Present"
             value={attendanceSummary.present}
+            description="Employees marked present."
             icon={UserCheck}
             tone="success"
           />
@@ -613,6 +685,7 @@ export default function ManagerTeamAttendancePage() {
           <AttendanceSummaryCard
             label="Late"
             value={attendanceSummary.late}
+            description="Employees marked late."
             icon={Clock3}
             tone="warning"
           />
@@ -620,8 +693,17 @@ export default function ManagerTeamAttendancePage() {
           <AttendanceSummaryCard
             label="Absent"
             value={attendanceSummary.absent}
+            description="Employees marked absent."
             icon={UserX}
             tone="danger"
+          />
+
+          <AttendanceSummaryCard
+            label="Completed"
+            value={attendanceSummary.completed}
+            description="Records with check-in and check-out."
+            icon={CalendarCheck}
+            tone="info"
           />
         </div>
 
@@ -630,11 +712,17 @@ export default function ManagerTeamAttendancePage() {
           <CardContent className="p-0">
             {/* Filters */}
             <div className="space-y-4 border-b border-white/10 p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                 <div>
+                  <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-200">
+                    <Filter className="h-3.5 w-3.5" />
+                    Team Attendance Directory
+                  </div>
+
                   <h2 className="text-xl font-black text-white">
-                    Team Attendance List
+                    Attendance Records
                   </h2>
+
                   <p className="mt-1 text-sm text-white/50">
                     Showing{" "}
                     {filteredAttendanceRecords.length === 0
@@ -654,7 +742,7 @@ export default function ManagerTeamAttendancePage() {
                         setSearchTerm(event.target.value);
                         setCurrentPage(1);
                       }}
-                      placeholder="Search employee, code, status..."
+                      placeholder="Search employee, code, department..."
                       className="h-11 border-white/10 bg-white/[0.04] pl-10 text-white placeholder:text-white/35"
                     />
                   </div>
@@ -667,7 +755,7 @@ export default function ManagerTeamAttendancePage() {
                     }}
                   >
                     <SelectTrigger className="h-11 border-white/10 bg-white/[0.04] text-white">
-                      <SelectValue placeholder="Filter status" />
+                      <SelectValue placeholder="Status" />
                     </SelectTrigger>
 
                     <SelectContent className="border-white/10 bg-[#17100b] text-white">
@@ -702,11 +790,11 @@ export default function ManagerTeamAttendancePage() {
             </div>
 
             {/* Desktop header */}
-            <div className="hidden border-b border-white/10 px-5 py-4 xl:grid xl:grid-cols-[1.4fr_1fr_1fr_1fr_0.8fr_1.5fr] xl:gap-4">
+            <div className="hidden border-b border-white/10 px-5 py-4 xl:grid xl:grid-cols-[1.25fr_1.1fr_1.1fr_0.85fr_0.85fr_1.5fr] xl:gap-4">
               <p className="text-sm font-bold text-white/50">Employee</p>
-              <p className="text-sm font-bold text-white/50">Date</p>
               <p className="text-sm font-bold text-white/50">Check In</p>
               <p className="text-sm font-bold text-white/50">Check Out</p>
+              <p className="text-sm font-bold text-white/50">Work Time</p>
               <p className="text-sm font-bold text-white/50">Status</p>
               <p className="text-right text-sm font-bold text-white/50">
                 Proof / Location
@@ -716,9 +804,7 @@ export default function ManagerTeamAttendancePage() {
             {/* Responsive records */}
             <div className="divide-y divide-white/10">
               {filteredAttendanceRecords.length === 0 ? (
-                <div className="p-10 text-center text-white/50">
-                  No team attendance records found.
-                </div>
+                <EmptyAttendanceState clearFilters={clearFilters} />
               ) : (
                 paginatedAttendanceRecords.map((record) => {
                   const checkInMapUrl = getMapUrl(
@@ -733,70 +819,97 @@ export default function ManagerTeamAttendancePage() {
 
                   return (
                     <div
-                      key={record.id}
-                      className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1.4fr_1fr_1fr_1fr_0.8fr_1.5fr] xl:items-center xl:gap-4"
+                      key={getAttendanceUniqueKey(record)}
+                      className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1.25fr_1.1fr_1.1fr_0.85fr_0.85fr_1.5fr] xl:items-center xl:gap-4"
                     >
-                      {/* Employee */}
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm text-white/40 xl:hidden">
                           Employee
                         </p>
-                        <p className="break-words font-bold text-white">
-                          {record.user?.fullName || "Unknown Employee"}
-                        </p>
-                        <p className="mt-1 text-xs text-white/45">
-                          {record.user?.employeeCode || "No code"}
-                        </p>
+
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-400 text-xs font-black text-black">
+                            {(record.user?.fullName || "EM")
+                              .split(" ")
+                              .map((word) => word[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="break-words font-black text-white">
+                              {record.user?.fullName || "Unknown Employee"}
+                            </p>
+
+                            <p className="mt-1 text-xs text-white/45">
+                              {record.user?.employeeCode || "No Code"}
+                            </p>
+
+                            <p className="mt-1 break-words text-xs text-white/45">
+                              {record.user?.department?.name || "No department"}{" "}
+                              •{" "}
+                              {record.user?.designation?.name ||
+                                "No designation"}
+                            </p>
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Date */}
-                      <div>
-                        <p className="text-sm text-white/40 xl:hidden">Date</p>
-                        <p className="font-semibold text-white">
-                          {formatDate(record.date)}
-                        </p>
-                      </div>
-
-                      {/* Check In */}
                       <div>
                         <p className="text-sm text-white/40 xl:hidden">
                           Check In
                         </p>
+
                         <p className="flex items-center gap-2 text-sm text-white/70">
                           <Clock3 className="h-4 w-4 shrink-0 text-amber-300" />
                           {formatDateTime(record.checkInAt)}
                         </p>
+
+                        <p className="mt-1 text-xs text-white/45">
+                          Date: {formatDate(record.date)}
+                        </p>
                       </div>
 
-                      {/* Check Out */}
                       <div>
                         <p className="text-sm text-white/40 xl:hidden">
                           Check Out
                         </p>
+
                         <p className="flex items-center gap-2 text-sm text-white/70">
                           <Timer className="h-4 w-4 shrink-0 text-amber-300" />
                           {formatDateTime(record.checkOutAt)}
                         </p>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-white/40 xl:hidden">
+                          Work Time
+                        </p>
+
+                        <p className="font-semibold text-white">
+                          {formatMinutes(record.workingMinutes)}
+                        </p>
+
                         <p className="mt-1 text-xs text-white/45">
-                          Work: {formatMinutes(record.workingMinutes)}
+                          Late: {formatMinutes(record.lateMinutes)}
                         </p>
                       </div>
 
-                      {/* Status */}
                       <div>
                         <p className="mb-1 text-sm text-white/40 xl:hidden">
                           Status
                         </p>
+
                         <Badge
                           className={getAttendanceStatusBadgeClass(
                             record.status
                           )}
                         >
-                          {record.status.replaceAll("_", " ")}
+                          {record.status?.replaceAll("_", " ") || "—"}
                         </Badge>
                       </div>
 
-                      {/* Proof and location */}
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
                         {record.checkInPhoto?.fileUrl ? (
                           <a
@@ -920,19 +1033,20 @@ export default function ManagerTeamAttendancePage() {
 
         {/* Note */}
         <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-          <CardContent className="p-5">
+          <CardContent className="p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
-                <UsersRound className="h-5 w-5" />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+                <ShieldCheck className="h-5 w-5" />
               </div>
 
               <div>
-                <h3 className="font-black text-white">Manager Visibility</h3>
+                <h3 className="text-lg font-black text-white">
+                  Duplicate-safe Team Attendance
+                </h3>
                 <p className="mt-2 text-sm leading-6 text-white/55">
-                  This page should show only attendance records of employees
-                  assigned under the logged-in manager. If no records appear,
-                  check manager-employee mapping and team attendance backend
-                  route.
+                  This page shows unique team attendance records only. Duplicate
+                  rows from API response are filtered before summary, search,
+                  pagination and list rendering.
                 </p>
               </div>
             </div>

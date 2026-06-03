@@ -12,6 +12,8 @@ import {
   Clock3,
   History,
   LogOut,
+  Mail,
+  Phone,
   RefreshCcw,
   ShieldCheck,
   Sparkles,
@@ -26,6 +28,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { clearAuthSession } from "@/services/auth.service";
 import { AuthUser } from "@/types/auth.types";
+
+type DashboardUser = AuthUser & Record<string, unknown>;
+
+type QuickAction = {
+  title: string;
+  description: string;
+  icon: ElementType;
+  buttonLabel: string;
+  href: string;
+  isPrimary?: boolean;
+};
 
 /**
  * Reads logged-in user from localStorage.
@@ -46,6 +59,58 @@ function getStoredUser(): AuthUser | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Safely reads user values because login response shape can slightly change.
+ */
+function getStringValue(
+  user: DashboardUser | null,
+  keys: string[],
+  fallback = "—"
+) {
+  if (!user) return fallback;
+
+  for (const key of keys) {
+    const value = user[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+
+    if (typeof value === "number") {
+      return String(value);
+    }
+  }
+
+  return fallback;
+}
+
+/**
+ * Converts role code into readable label.
+ * Example: EMPLOYEE -> Employee
+ */
+function formatRole(role?: string | null) {
+  if (!role) return "Employee";
+
+  return role
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+/**
+ * Builds initials for avatar.
+ */
+function getInitials(name?: string | null) {
+  if (!name) return "EM";
+
+  return name
+    .split(" ")
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 /**
@@ -173,6 +238,32 @@ function QuickActionCard({
   );
 }
 
+/**
+ * Small profile row.
+ */
+function ProfileMiniRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ElementType;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
+      <div className="flex items-center gap-2 text-sm text-white/45">
+        <Icon className="h-4 w-4 text-amber-300" />
+        {label}
+      </div>
+
+      <span className="break-all text-right text-sm font-bold text-white">
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default function EmployeeDashboardPage() {
   const router = useRouter();
 
@@ -230,23 +321,25 @@ export default function EmployeeDashboardPage() {
     };
   }, [router]);
 
-  /**
-   * User initials for avatar card.
-   */
-  const userInitials = useMemo(() => {
-    if (!user?.fullName) return "EM";
+  const profile = useMemo(() => {
+    const profileUser = user as DashboardUser | null;
 
-    return user.fullName
-      .split(" ")
-      .map((word) => word[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
+    return {
+      fullName: getStringValue(profileUser, ["fullName", "name"], "Employee"),
+      employeeCode: getStringValue(profileUser, [
+        "employeeCode",
+        "code",
+        "userCode",
+      ]),
+      email: getStringValue(profileUser, ["email", "userEmail"]),
+      mobile: getStringValue(profileUser, ["mobile", "phone", "phoneNo"]),
+      role: getStringValue(profileUser, ["role"], "EMPLOYEE"),
+    };
   }, [user]);
 
   /**
    * Greeting text based on current browser time.
-   * This runs only after the page is ready, so hydration mismatch is avoided.
+   * This dashboard renders only after session check, so hydration mismatch is avoided.
    */
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -254,6 +347,51 @@ export default function EmployeeDashboardPage() {
     if (hour < 12) return "Good Morning";
     if (hour < 17) return "Good Afternoon";
     return "Good Evening";
+  }, []);
+
+  /**
+   * Duplicate-safe quick actions.
+   *
+   * This prevents duplicate action cards if the array is edited later.
+   */
+  const quickActions = useMemo<QuickAction[]>(() => {
+    const actions: QuickAction[] = [
+      {
+        title: "Mark Attendance",
+        description:
+          "Check-in or check-out with your current location and photo proof.",
+        icon: CalendarCheck,
+        buttonLabel: "Open Attendance",
+        href: "/employee/attendance",
+        isPrimary: true,
+      },
+      {
+        title: "Attendance History",
+        description:
+          "View your past attendance records, maps and uploaded photo proof.",
+        icon: History,
+        buttonLabel: "Open History",
+        href: "/employee/attendance/history",
+      },
+      {
+        title: "My Tasks",
+        description:
+          "View assigned tasks with status, priority and due date filters.",
+        icon: ClipboardList,
+        buttonLabel: "Open Tasks",
+        href: "/employee/tasks",
+      },
+      {
+        title: "My Profile",
+        description:
+          "View your employee details, role, contact and account information.",
+        icon: UserRound,
+        buttonLabel: "Open Profile",
+        href: "/employee/profile",
+      },
+    ];
+
+    return Array.from(new Map(actions.map((item) => [item.href, item])).values());
   }, []);
 
   /**
@@ -293,13 +431,12 @@ export default function EmployeeDashboardPage() {
               </div>
 
               <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
-                {greeting}, {user.fullName || "Employee"}
+                {greeting}, {profile.fullName}
               </h1>
 
               <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
-                Manage attendance, track assigned tasks, view attendance
-                history and access your profile from one premium employee
-                workspace.
+                Manage attendance, track assigned tasks, view attendance history
+                and access your profile from one premium employee workspace.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
@@ -334,15 +471,16 @@ export default function EmployeeDashboardPage() {
             <div className="w-full max-w-sm rounded-[2rem] border border-white/10 bg-white/[0.045] p-5">
               <div className="flex items-center gap-4">
                 <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[1.5rem] bg-amber-400 text-2xl font-black text-black shadow-lg shadow-amber-500/20">
-                  {userInitials}
+                  {getInitials(profile.fullName)}
                 </div>
 
                 <div className="min-w-0">
                   <p className="break-words text-xl font-black text-white">
-                    {user.fullName || "Employee"}
+                    {profile.fullName}
                   </p>
+
                   <p className="mt-1 text-sm text-white/50">
-                    {user.employeeCode || "Employee Code"}
+                    {profile.employeeCode}
                   </p>
 
                   <Badge className="mt-3 border-emerald-300/20 bg-emerald-300/10 text-emerald-100">
@@ -351,27 +489,16 @@ export default function EmployeeDashboardPage() {
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-3 rounded-2xl border border-white/10 bg-black/10 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-white/45">Role</span>
-                  <span className="text-sm font-black text-white">
-                    {user.role || "EMPLOYEE"}
-                  </span>
-                </div>
+              <div className="mt-5 grid gap-3">
+                <ProfileMiniRow
+                  icon={ShieldCheck}
+                  label="Role"
+                  value={formatRole(profile.role)}
+                />
 
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-white/45">Mobile</span>
-                  <span className="break-words text-right text-sm font-bold text-white">
-                    {user.mobile || "—"}
-                  </span>
-                </div>
+                <ProfileMiniRow icon={Phone} label="Mobile" value={profile.mobile} />
 
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-white/45">Email</span>
-                  <span className="break-all text-right text-sm font-bold text-white">
-                    {user.email || "—"}
-                  </span>
-                </div>
+                <ProfileMiniRow icon={Mail} label="Email" value={profile.email} />
               </div>
             </div>
           </div>
@@ -412,7 +539,7 @@ export default function EmployeeDashboardPage() {
             label="Profile"
             value="Verified"
             description="Access employee identity and contact information."
-            icon={BadgeCheck}
+            icon={CheckCircle2}
             tone="warning"
           />
         </motion.div>
@@ -435,6 +562,7 @@ export default function EmployeeDashboardPage() {
                   <h2 className="text-2xl font-black text-white">
                     Quick Actions
                   </h2>
+
                   <p className="mt-1 text-sm text-white/50">
                     Start your daily employee workflow from here.
                   </p>
@@ -451,38 +579,17 @@ export default function EmployeeDashboardPage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <QuickActionCard
-                  title="Mark Attendance"
-                  description="Check-in or check-out with your current location and photo proof."
-                  icon={CalendarCheck}
-                  buttonLabel="Open Attendance"
-                  isPrimary
-                  onClick={() => router.push("/employee/attendance")}
-                />
-
-                <QuickActionCard
-                  title="Attendance History"
-                  description="View your past attendance records, maps and uploaded photo proof."
-                  icon={History}
-                  buttonLabel="Open History"
-                  onClick={() => router.push("/employee/attendance/history")}
-                />
-
-                <QuickActionCard
-                  title="My Tasks"
-                  description="View assigned tasks with status, priority and due date filters."
-                  icon={ClipboardList}
-                  buttonLabel="Open Tasks"
-                  onClick={() => router.push("/employee/tasks")}
-                />
-
-                <QuickActionCard
-                  title="My Profile"
-                  description="View your employee details, role, contact and joining information."
-                  icon={UserRound}
-                  buttonLabel="Open Profile"
-                  onClick={() => router.push("/employee/profile")}
-                />
+                {quickActions.map((action) => (
+                  <QuickActionCard
+                    key={action.href}
+                    title={action.title}
+                    description={action.description}
+                    icon={action.icon}
+                    buttonLabel={action.buttonLabel}
+                    isPrimary={action.isPrimary}
+                    onClick={() => router.push(action.href)}
+                  />
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -507,6 +614,7 @@ export default function EmployeeDashboardPage() {
                       <h3 className="text-lg font-black text-white">
                         Attendance Reminder
                       </h3>
+
                       <p className="mt-2 text-sm leading-6 text-white/55">
                         You can check-in and check-out from your actual work
                         location. Location restriction is not applied right now,

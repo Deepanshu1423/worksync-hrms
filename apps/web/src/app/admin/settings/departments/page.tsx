@@ -1,20 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ElementType,
+} from "react";
 import { isAxiosError } from "axios";
 import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Edit,
+  Filter,
   Loader2,
   Plus,
   RefreshCcw,
   Search,
+  ShieldCheck,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -43,7 +53,9 @@ import {
 import { DepartmentOption } from "@/types/master-data.types";
 
 type ApiErrorResponse = {
-  message?: string;
+  success?: boolean;
+  message?: string | string[];
+  error?: string;
 };
 
 type DepartmentFormState = {
@@ -58,20 +70,28 @@ const initialDepartmentForm: DepartmentFormState = {
   description: "",
 };
 
-/**
- * Extracts readable backend error message safely.
- */
 function getApiErrorMessage(error: unknown, fallback: string) {
-  if (isAxiosError<ApiErrorResponse>(error)) {
-    return error.response?.data?.message || fallback;
+  if (!isAxiosError<ApiErrorResponse>(error)) return fallback;
+
+  if (!error.response) {
+    return "Backend server is not reachable. Please check if API server is running.";
   }
+
+  const statusCode = error.response.status;
+  const data = error.response.data;
+
+  if (statusCode === 401) return "Your session has expired. Please login again.";
+  if (statusCode === 403) return "You do not have permission to perform this action.";
+  if (statusCode === 404) return "Department API route not found. Please check backend routes.";
+  if (statusCode >= 500) return "Server error while processing department request.";
+
+  if (Array.isArray(data?.message)) return data.message[0] || fallback;
+  if (typeof data?.message === "string") return data.message;
+  if (typeof data?.error === "string") return data.error;
 
   return fallback;
 }
 
-/**
- * Formats date into readable UI format.
- */
 function formatDate(value?: string | null) {
   if (!value) return "—";
 
@@ -80,48 +100,98 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
-/**
- * Summary card component.
- */
-function DepartmentSummaryCard({
+function getDepartmentUniqueKey(department: DepartmentOption) {
+  return department.id || department.name?.trim().toLowerCase() || "";
+}
+
+function SummaryCard({
   label,
   value,
+  description,
   icon: Icon,
 }: {
   label: string;
   value: number;
+  description: string;
   icon: LucideIcon;
 }) {
   return (
-    <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-      <CardContent className="p-5">
-        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+    <Card className="group overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+      <CardContent className="relative p-5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-300/5 blur-2xl transition group-hover:bg-amber-300/10" />
+
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
           <Icon className="h-5 w-5" />
         </div>
 
-        <p className="text-sm text-white/55">{label}</p>
-        <p className="mt-1 text-2xl font-black text-white">{value}</p>
+        <p className="text-sm font-semibold text-white/55">{label}</p>
+        <p className="mt-1 text-3xl font-black text-white">{value}</p>
+        <p className="mt-2 text-xs leading-5 text-white/45">{description}</p>
       </CardContent>
     </Card>
   );
 }
 
-/**
- * Loading UI while departments are being fetched.
- */
 function DepartmentsLoading() {
   return (
     <section className="mx-auto max-w-7xl space-y-6">
-      <Skeleton className="h-40 rounded-[2rem] bg-white/10" />
-      <Skeleton className="h-32 rounded-3xl bg-white/10" />
+      <Skeleton className="h-48 rounded-[2rem] bg-white/10" />
+      <Skeleton className="h-36 rounded-3xl bg-white/10" />
       <Skeleton className="h-96 rounded-[2rem] bg-white/10" />
     </section>
   );
 }
 
+function EmptyState({ clearFilters }: { clearFilters: () => void }) {
+  return (
+    <div className="p-10">
+      <div className="mx-auto max-w-md rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+          <Building2 className="h-6 w-6" />
+        </div>
+
+        <h3 className="text-xl font-black text-white">No departments found</h3>
+        <p className="mt-2 text-sm leading-6 text-white/50">
+          No department matched your current search. Clear filters and try
+          again.
+        </p>
+
+        <Button
+          type="button"
+          onClick={clearFilters}
+          variant="outline"
+          className="mt-5 rounded-xl border-amber-200/30 bg-white/5 text-white hover:bg-white/10"
+        >
+          Clear Filters
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function DetailPill({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ElementType;
+  label: string;
+  value?: string | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white/40">
+        <Icon className="h-3.5 w-3.5 text-amber-300" />
+        {label}
+      </div>
+
+      <p className="break-words text-sm font-bold text-white">{value || "—"}</p>
+    </div>
+  );
+}
+
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
-
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -145,113 +215,98 @@ export default function DepartmentsPage() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  /**
-   * Fetch departments from backend.
-   */
   const fetchDepartments = useCallback(async (showLoader = true) => {
     try {
-      if (showLoader) {
-        setIsLoading(true);
-      }
+      if (showLoader) setIsLoading(true);
 
       const data = await getDepartments();
-
       setDepartments(data);
     } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, "Failed to fetch departments"));
+      toast.error(getApiErrorMessage(error, "Failed to fetch departments."));
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  /**
-   * Initial API call.
-   */
   useEffect(() => {
     const loadInitialData = async () => {
       await fetchDepartments(false);
     };
 
-    loadInitialData();
+    void loadInitialData();
   }, [fetchDepartments]);
 
   /**
-   * Search department by name/description.
+   * Duplicate-safe departments.
+   * API data -> unique records -> summary -> search -> pagination -> display.
    */
+  const uniqueDepartments = useMemo(() => {
+    const departmentMap = new Map<string, DepartmentOption>();
+
+    departments.forEach((department) => {
+      const uniqueKey = getDepartmentUniqueKey(department);
+      if (!uniqueKey) return;
+
+      if (!departmentMap.has(uniqueKey)) {
+        departmentMap.set(uniqueKey, department);
+      }
+    });
+
+    return Array.from(departmentMap.values());
+  }, [departments]);
+
   const filteredDepartments = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
 
-    if (!keyword) return departments;
-
-    return departments.filter((department) => {
-      const searchableText = [department.name, department.description]
+    return uniqueDepartments.filter((department) => {
+      const searchableText = [
+        department.name,
+        department.description,
+        formatDate(department.createdAt),
+      ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
 
-      return searchableText.includes(keyword);
+      return keyword ? searchableText.includes(keyword) : true;
     });
-  }, [departments, searchTerm]);
+  }, [uniqueDepartments, searchTerm]);
 
-  /**
-   * Pagination calculation.
-   * Only 10 departments will show per page.
-   */
   const totalPages = Math.max(
     1,
     Math.ceil(filteredDepartments.length / DEPARTMENTS_PER_PAGE)
   );
 
   const safeCurrentPage = Math.min(currentPage, totalPages);
-
   const startIndex = (safeCurrentPage - 1) * DEPARTMENTS_PER_PAGE;
   const endIndex = startIndex + DEPARTMENTS_PER_PAGE;
-
   const paginatedDepartments = filteredDepartments.slice(startIndex, endIndex);
 
-  /**
-   * Updates create form value.
-   */
   const updateCreateForm = (
     field: keyof DepartmentFormState,
     value: string
   ) => {
-    setCreateForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setCreateForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  /**
-   * Updates edit form value.
-   */
   const updateEditForm = (field: keyof DepartmentFormState, value: string) => {
-    setEditForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  /**
-   * Common validation for create/edit.
-   */
   const validateDepartmentForm = (form: DepartmentFormState) => {
     if (!form.name.trim()) {
-      toast.error("Department name is required");
+      toast.error("Department name is required.");
       return false;
     }
 
     if (form.name.trim().length < 2) {
-      toast.error("Department name must be at least 2 characters");
+      toast.error("Department name must be at least 2 characters.");
       return false;
     }
 
     return true;
   };
 
-  /**
-   * Creates a new department.
-   */
   const handleCreateDepartment = async () => {
     if (!validateDepartmentForm(createForm)) return;
 
@@ -263,7 +318,7 @@ export default function DepartmentsPage() {
         description: createForm.description.trim() || null,
       });
 
-      toast.success("Department created successfully");
+      toast.success("Department created successfully.");
 
       setCreateForm(initialDepartmentForm);
       setIsCreateOpen(false);
@@ -271,29 +326,21 @@ export default function DepartmentsPage() {
 
       await fetchDepartments(false);
     } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, "Failed to create department"));
+      toast.error(getApiErrorMessage(error, "Failed to create department."));
     } finally {
       setIsCreating(false);
     }
   };
 
-  /**
-   * Opens edit modal with selected department data.
-   */
   const openEditModal = (department: DepartmentOption) => {
     setSelectedDepartment(department);
-
     setEditForm({
       name: department.name || "",
       description: department.description || "",
     });
-
     setIsEditOpen(true);
   };
 
-  /**
-   * Updates selected department.
-   */
   const handleUpdateDepartment = async () => {
     if (!selectedDepartment) return;
     if (!validateDepartmentForm(editForm)) return;
@@ -306,7 +353,7 @@ export default function DepartmentsPage() {
         description: editForm.description.trim() || null,
       });
 
-      toast.success("Department updated successfully");
+      toast.success("Department updated successfully.");
 
       setSelectedDepartment(null);
       setEditForm(initialDepartmentForm);
@@ -314,25 +361,17 @@ export default function DepartmentsPage() {
 
       await fetchDepartments(false);
     } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, "Failed to update department"));
+      toast.error(getApiErrorMessage(error, "Failed to update department."));
     } finally {
       setIsUpdating(false);
     }
   };
 
-  /**
-   * Opens delete confirmation modal.
-   */
   const openDeleteModal = (department: DepartmentOption) => {
     setDeleteTarget(department);
     setIsDeleteOpen(true);
   };
 
-  /**
-   * Deletes selected department.
-   *
-   * Backend may block delete if this department is already used by employees.
-   */
   const handleDeleteDepartment = async () => {
     if (!deleteTarget) return;
 
@@ -341,52 +380,50 @@ export default function DepartmentsPage() {
 
       await deleteDepartment(deleteTarget.id);
 
-      toast.success("Department deleted successfully");
+      toast.success("Department deleted successfully.");
 
       setDeleteTarget(null);
       setIsDeleteOpen(false);
 
       await fetchDepartments(false);
     } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, "Failed to delete department"));
+      toast.error(getApiErrorMessage(error, "Failed to delete department."));
     } finally {
       setIsDeleting(false);
     }
   };
 
-  /**
-   * Clears search filter.
-   */
   const clearFilters = () => {
     setSearchTerm("");
     setCurrentPage(1);
   };
 
-  if (isLoading) {
-    return <DepartmentsLoading />;
-  }
+  if (isLoading) return <DepartmentsLoading />;
 
   return (
     <section className="mx-auto max-w-7xl space-y-6">
-      {/* Page header */}
+      {/* Premium hero */}
       <motion.div
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
-        className="rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8"
+        className="relative overflow-hidden rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10"
       >
-        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-          <div>
-            <p className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-300">
-              <Building2 className="h-4 w-4" />
-              Departments
-            </p>
+        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+        <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+          <div>
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+              <Sparkles className="h-4 w-4" />
+              Departments
+            </div>
+
+            <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
               Manage Departments
             </h1>
 
-            <p className="mt-4 max-w-2xl text-base leading-7 text-white/65">
+            <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
               Create and manage departments used in employee profiles, reports,
               attendance filters and HRMS analytics.
             </p>
@@ -404,7 +441,7 @@ export default function DepartmentsPage() {
 
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
-                <Button className="h-11 rounded-xl bg-amber-400 px-5 font-bold text-black hover:bg-amber-300">
+                <Button className="h-11 rounded-xl bg-amber-400 px-5 font-black text-black hover:bg-amber-300">
                   <Plus className="mr-2 h-4 w-4" />
                   Create Department
                 </Button>
@@ -483,20 +520,26 @@ export default function DepartmentsPage() {
 
       {/* Summary */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <DepartmentSummaryCard
+        <SummaryCard
           label="Total Departments"
-          value={departments.length}
+          value={uniqueDepartments.length}
+          description="Unique departments available."
           icon={Building2}
         />
       </div>
 
-      {/* Department list */}
+      {/* List */}
       <Card className="overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-2xl shadow-black/25">
         <CardContent className="p-0">
           {/* Filters */}
           <div className="space-y-4 border-b border-white/10 p-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-200">
+                  <Filter className="h-3.5 w-3.5" />
+                  Department Directory
+                </div>
+
                 <h2 className="text-xl font-black text-white">
                   Department List
                 </h2>
@@ -544,23 +587,20 @@ export default function DepartmentsPage() {
             </p>
           </div>
 
-          {/* Responsive list */}
           <div className="divide-y divide-white/10">
             {filteredDepartments.length === 0 ? (
-              <div className="p-10 text-center text-white/50">
-                No departments found.
-              </div>
+              <EmptyState clearFilters={clearFilters} />
             ) : (
               paginatedDepartments.map((department) => (
                 <div
-                  key={department.id}
+                  key={getDepartmentUniqueKey(department)}
                   className="grid gap-5 p-5 hover:bg-white/[0.025] lg:grid-cols-[1.2fr_1.8fr_1fr_1fr] lg:items-center lg:gap-4"
                 >
                   <div className="min-w-0">
                     <p className="text-sm text-white/40 lg:hidden">
                       Department
                     </p>
-                    <p className="break-words font-bold text-white">
+                    <p className="break-words font-black text-white">
                       {department.name}
                     </p>
                     <p className="mt-1 text-xs text-white/45">
@@ -578,8 +618,11 @@ export default function DepartmentsPage() {
                   </div>
 
                   <div>
-                    <p className="text-sm text-white/40 lg:hidden">Created</p>
+                    <p className="mb-1 text-sm text-white/40 lg:hidden">
+                      Created
+                    </p>
                     <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">
+                      <CalendarDays className="mr-1 h-3.5 w-3.5" />
                       {formatDate(department.createdAt)}
                     </Badge>
                   </div>
@@ -674,7 +717,28 @@ export default function DepartmentsPage() {
         </CardContent>
       </Card>
 
-      {/* Edit Department Modal */}
+      {/* Note */}
+      <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black text-white">
+                Duplicate-safe Department Display
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-white/55">
+                This page shows unique departments only. Duplicate rows from API
+                response are filtered before summary, search and list rendering.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Edit modal */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto border-amber-100/15 bg-[#17100b] text-white sm:max-w-xl">
           <DialogHeader>
@@ -686,14 +750,27 @@ export default function DepartmentsPage() {
             </p>
           </DialogHeader>
 
+          {selectedDepartment ? (
+            <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4 sm:grid-cols-2">
+              <DetailPill
+                icon={Building2}
+                label="Department"
+                value={selectedDepartment.name}
+              />
+              <DetailPill
+                icon={CalendarDays}
+                label="Created"
+                value={formatDate(selectedDepartment.createdAt)}
+              />
+            </div>
+          ) : null}
+
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
               <Label>Department Name</Label>
               <Input
                 value={editForm.name}
-                onChange={(event) =>
-                  updateEditForm("name", event.target.value)
-                }
+                onChange={(event) => updateEditForm("name", event.target.value)}
                 className="border-white/10 bg-white/[0.04] text-white placeholder:text-white/35"
               />
             </div>
@@ -742,7 +819,7 @@ export default function DepartmentsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Department Modal */}
+      {/* Delete modal */}
       <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <DialogContent className="border-red-300/20 bg-[#17100b] text-white sm:max-w-lg">
           <DialogHeader>
@@ -750,7 +827,8 @@ export default function DepartmentsPage() {
               Delete Department
             </DialogTitle>
             <p className="text-sm text-white/50">
-              This action will delete the department if backend allows it.
+              Backend may block delete if this department is already assigned to
+              employees.
             </p>
           </DialogHeader>
 

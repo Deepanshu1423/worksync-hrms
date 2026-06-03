@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ElementType,
+} from "react";
 import { isAxiosError } from "axios";
 import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
@@ -11,12 +17,15 @@ import {
   ChevronsRight,
   Edit,
   ExternalLink,
+  Filter,
   Loader2,
   MapPin,
   Plus,
   Power,
   RefreshCcw,
   Search,
+  ShieldCheck,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -46,7 +55,9 @@ import {
 import { OfficeLocation } from "@/types/office-location.types";
 
 type ApiErrorResponse = {
-  message?: string;
+  success?: boolean;
+  message?: string | string[];
+  error?: string;
 };
 
 type OfficeLocationFormState = {
@@ -67,40 +78,41 @@ const initialLocationForm: OfficeLocationFormState = {
   radiusMeters: "100",
 };
 
-/**
- * Extract readable backend error message safely.
- */
 function getApiErrorMessage(error: unknown, fallback: string) {
-  if (isAxiosError<ApiErrorResponse>(error)) {
-    return error.response?.data?.message || fallback;
+  if (!isAxiosError<ApiErrorResponse>(error)) return fallback;
+
+  if (!error.response) {
+    return "Backend server is not reachable. Please check if API server is running.";
   }
+
+  const statusCode = error.response.status;
+  const data = error.response.data;
+
+  if (statusCode === 401) return "Your session has expired. Please login again.";
+  if (statusCode === 403) return "You do not have permission to perform this action.";
+  if (statusCode === 404) return "Office location API route not found. Please check backend routes.";
+  if (statusCode >= 500) return "Server error while processing office location request.";
+
+  if (Array.isArray(data?.message)) return data.message[0] || fallback;
+  if (typeof data?.message === "string") return data.message;
+  if (typeof data?.error === "string") return data.error;
 
   return fallback;
 }
 
 /**
- * Format date for UI.
- */
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-
-  return new Intl.DateTimeFormat("en-IN", {
-    dateStyle: "medium",
-  }).format(new Date(value));
-}
-
-/**
  * Build Google Maps link from latitude and longitude.
  */
-function getMapUrl(latitude: number, longitude: number) {
-  return `https://www.google.com/maps?q=${latitude},${longitude}`;
+function getMapUrl(latitude: number | string, longitude: number | string) {
+  return `https://www.google.com/maps?q=${Number(latitude)},${Number(longitude)}`;
 }
 
 /**
  * Returns office location id safely.
  *
  * Important:
- * We are not checking UUID here because backend id may not be UUID format.
+ * We are not assuming only one id field because backend may send
+ * id, officeLocationId, locationId or _id.
  */
 function getOfficeLocationId(location: OfficeLocation) {
   const possibleIds = [
@@ -116,10 +128,9 @@ function getOfficeLocationId(location: OfficeLocation) {
 }
 
 /**
- * Returns radius value safely.
+ * Returns radius safely.
  *
- * Backend field: allowedRadius
- * Frontend field: radiusMeters
+ * Backend may send allowedRadius while frontend uses radiusMeters.
  */
 function getOfficeLocationRadius(location: OfficeLocation) {
   return (
@@ -128,6 +139,18 @@ function getOfficeLocationRadius(location: OfficeLocation) {
     location.radius ??
     location.allowedRadiusMeters ??
     100
+  );
+}
+
+/**
+ * Duplicate-safe unique key.
+ */
+function getOfficeLocationUniqueKey(location: OfficeLocation) {
+  return (
+    getOfficeLocationId(location) ||
+    [location.name, location.latitude, location.longitude]
+      .filter(Boolean)
+      .join("-")
   );
 }
 
@@ -145,17 +168,22 @@ function sanitizeRadiusInput(value: string) {
   return value.replace(/\D/g, "");
 }
 
-/**
- * Summary card.
- */
-function OfficeLocationSummaryCard({
+function getStatusBadgeClass(isActive: boolean) {
+  return isActive
+    ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+    : "border-red-300/20 bg-red-300/10 text-red-200";
+}
+
+function SummaryCard({
   label,
   value,
+  description,
   icon: Icon,
   tone = "default",
 }: {
   label: string;
   value: number;
+  description: string;
   icon: LucideIcon;
   tone?: "default" | "success" | "danger";
 }) {
@@ -166,32 +194,32 @@ function OfficeLocationSummaryCard({
   };
 
   return (
-    <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-      <CardContent className="p-5">
+    <Card className="group overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+      <CardContent className="relative p-5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-300/5 blur-2xl transition group-hover:bg-amber-300/10" />
+
         <div
-          className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl ${toneClass[tone]}`}
+          className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${toneClass[tone]}`}
         >
           <Icon className="h-5 w-5" />
         </div>
 
-        <p className="text-sm text-white/55">{label}</p>
-        <p className="mt-1 text-2xl font-black text-white">{value}</p>
+        <p className="text-sm font-semibold text-white/55">{label}</p>
+        <p className="mt-1 text-3xl font-black text-white">{value}</p>
+        <p className="mt-2 text-xs leading-5 text-white/45">{description}</p>
       </CardContent>
     </Card>
   );
 }
 
-/**
- * Loading skeleton.
- */
 function OfficeLocationsLoading() {
   return (
     <section className="mx-auto max-w-7xl space-y-6">
-      <Skeleton className="h-40 rounded-[2rem] bg-white/10" />
+      <Skeleton className="h-48 rounded-[2rem] bg-white/10" />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 3 }).map((_, index) => (
-          <Skeleton key={index} className="h-32 rounded-3xl bg-white/10" />
+          <Skeleton key={index} className="h-36 rounded-3xl bg-white/10" />
         ))}
       </div>
 
@@ -200,9 +228,57 @@ function OfficeLocationsLoading() {
   );
 }
 
+function EmptyState({ clearFilters }: { clearFilters: () => void }) {
+  return (
+    <div className="p-10">
+      <div className="mx-auto max-w-md rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+          <MapPin className="h-6 w-6" />
+        </div>
+
+        <h3 className="text-xl font-black text-white">
+          No office locations found
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-white/50">
+          No location matched your current search. Clear filters and try again.
+        </p>
+
+        <Button
+          type="button"
+          onClick={clearFilters}
+          variant="outline"
+          className="mt-5 rounded-xl border-amber-200/30 bg-white/5 text-white hover:bg-white/10"
+        >
+          Clear Filters
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function DetailPill({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ElementType;
+  label: string;
+  value?: string | null;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white/40">
+        <Icon className="h-3.5 w-3.5 text-amber-300" />
+        {label}
+      </div>
+
+      <p className="break-words text-sm font-bold text-white">{value || "—"}</p>
+    </div>
+  );
+}
+
 export default function OfficeLocationsPage() {
   const [locations, setLocations] = useState<OfficeLocation[]>([]);
-
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -228,57 +304,60 @@ export default function OfficeLocationsPage() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  /**
-   * Fetch office locations from backend.
-   */
   const fetchLocations = useCallback(async (showLoader = true) => {
     try {
-      if (showLoader) {
-        setIsLoading(true);
-      }
+      if (showLoader) setIsLoading(true);
 
       const data = await getOfficeLocations();
       setLocations(data);
     } catch (error: unknown) {
       toast.error(
-        getApiErrorMessage(error, "Failed to fetch office locations")
+        getApiErrorMessage(error, "Failed to fetch office locations.")
       );
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  /**
-   * Initial page load.
-   */
   useEffect(() => {
     const loadInitialData = async () => {
       await fetchLocations(false);
     };
 
-    loadInitialData();
+    void loadInitialData();
   }, [fetchLocations]);
 
   /**
-   * Summary cards.
+   * Duplicate-safe locations.
+   * API data -> unique records -> summary -> search -> pagination -> display.
    */
-  const locationSummary = useMemo(() => {
-    return {
-      total: locations.length,
-      active: locations.filter((location) => location.isActive).length,
-      inactive: locations.filter((location) => !location.isActive).length,
-    };
+  const uniqueLocations = useMemo(() => {
+    const locationMap = new Map<string, OfficeLocation>();
+
+    locations.forEach((location) => {
+      const uniqueKey = getOfficeLocationUniqueKey(location);
+      if (!uniqueKey) return;
+
+      if (!locationMap.has(uniqueKey)) {
+        locationMap.set(uniqueKey, location);
+      }
+    });
+
+    return Array.from(locationMap.values());
   }, [locations]);
 
-  /**
-   * Search locations by name/address/coordinates/status.
-   */
+  const locationSummary = useMemo(() => {
+    return {
+      total: uniqueLocations.length,
+      active: uniqueLocations.filter((location) => location.isActive).length,
+      inactive: uniqueLocations.filter((location) => !location.isActive).length,
+    };
+  }, [uniqueLocations]);
+
   const filteredLocations = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
 
-    if (!keyword) return locations;
-
-    return locations.filter((location) => {
+    return uniqueLocations.filter((location) => {
       const searchableText = [
         location.name,
         location.address,
@@ -291,103 +370,77 @@ export default function OfficeLocationsPage() {
         .join(" ")
         .toLowerCase();
 
-      return searchableText.includes(keyword);
+      return keyword ? searchableText.includes(keyword) : true;
     });
-  }, [locations, searchTerm]);
+  }, [uniqueLocations, searchTerm]);
 
-  /**
-   * Pagination calculation.
-   */
   const totalPages = Math.max(
     1,
     Math.ceil(filteredLocations.length / OFFICE_LOCATIONS_PER_PAGE)
   );
 
   const safeCurrentPage = Math.min(currentPage, totalPages);
-
   const startIndex = (safeCurrentPage - 1) * OFFICE_LOCATIONS_PER_PAGE;
   const endIndex = startIndex + OFFICE_LOCATIONS_PER_PAGE;
-
   const paginatedLocations = filteredLocations.slice(startIndex, endIndex);
 
-  /**
-   * Update create form.
-   */
   const updateCreateForm = (
     field: keyof OfficeLocationFormState,
     value: string
   ) => {
-    setCreateForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setCreateForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  /**
-   * Update edit form.
-   */
   const updateEditForm = (
     field: keyof OfficeLocationFormState,
     value: string
   ) => {
-    setEditForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  /**
-   * Common validation for create/edit form.
-   */
   const validateLocationForm = (form: OfficeLocationFormState) => {
     const latitude = Number(form.latitude);
     const longitude = Number(form.longitude);
     const radiusMeters = Number(form.radiusMeters);
 
     if (!form.name.trim()) {
-      toast.error("Location name is required");
+      toast.error("Location name is required.");
       return false;
     }
 
     if (!form.latitude.trim()) {
-      toast.error("Latitude is required");
+      toast.error("Latitude is required.");
       return false;
     }
 
     if (Number.isNaN(latitude) || latitude < -90 || latitude > 90) {
-      toast.error("Latitude must be a valid number between -90 and 90");
+      toast.error("Latitude must be a valid number between -90 and 90.");
       return false;
     }
 
     if (!form.longitude.trim()) {
-      toast.error("Longitude is required");
+      toast.error("Longitude is required.");
       return false;
     }
 
     if (Number.isNaN(longitude) || longitude < -180 || longitude > 180) {
-      toast.error("Longitude must be a valid number between -180 and 180");
+      toast.error("Longitude must be a valid number between -180 and 180.");
       return false;
     }
 
     if (!form.radiusMeters.trim()) {
-      toast.error("Reference radius is required");
+      toast.error("Reference radius is required.");
       return false;
     }
 
     if (Number.isNaN(radiusMeters) || radiusMeters <= 0) {
-      toast.error("Reference radius must be greater than 0");
+      toast.error("Reference radius must be greater than 0.");
       return false;
     }
 
     return true;
   };
 
-  /**
-   * Create office / plant site location.
-   *
-   * Note:
-   * Attendance is not restricted by this radius.
-   */
   const handleCreateLocation = async () => {
     if (!validateLocationForm(createForm)) return;
 
@@ -403,7 +456,7 @@ export default function OfficeLocationsPage() {
         isActive: true,
       });
 
-      toast.success("Office location created successfully");
+      toast.success("Office location created successfully.");
 
       setCreateForm(initialLocationForm);
       setIsCreateOpen(false);
@@ -412,16 +465,13 @@ export default function OfficeLocationsPage() {
       await fetchLocations(false);
     } catch (error: unknown) {
       toast.error(
-        getApiErrorMessage(error, "Failed to create office location")
+        getApiErrorMessage(error, "Failed to create office location.")
       );
     } finally {
       setIsCreating(false);
     }
   };
 
-  /**
-   * Open edit modal with selected location data.
-   */
   const openEditModal = (location: OfficeLocation) => {
     setSelectedLocation(location);
 
@@ -436,9 +486,6 @@ export default function OfficeLocationsPage() {
     setIsEditOpen(true);
   };
 
-  /**
-   * Update selected location.
-   */
   const handleUpdateLocation = async () => {
     if (!selectedLocation) return;
     if (!validateLocationForm(editForm)) return;
@@ -446,7 +493,6 @@ export default function OfficeLocationsPage() {
     const locationId = getOfficeLocationId(selectedLocation);
 
     if (!locationId) {
-      console.log("Selected office location object:", selectedLocation);
       toast.error("Office location id missing. Please refresh and try again.");
       return;
     }
@@ -462,7 +508,7 @@ export default function OfficeLocationsPage() {
         radiusMeters: Number(editForm.radiusMeters),
       });
 
-      toast.success("Office location updated successfully");
+      toast.success("Office location updated successfully.");
 
       setSelectedLocation(null);
       setEditForm(initialLocationForm);
@@ -471,31 +517,24 @@ export default function OfficeLocationsPage() {
       await fetchLocations(false);
     } catch (error: unknown) {
       toast.error(
-        getApiErrorMessage(error, "Failed to update office location")
+        getApiErrorMessage(error, "Failed to update office location.")
       );
     } finally {
       setIsUpdating(false);
     }
   };
 
-  /**
-   * Open activate/deactivate confirmation modal.
-   */
   const openStatusModal = (location: OfficeLocation) => {
     setStatusTarget(location);
     setIsStatusOpen(true);
   };
 
-  /**
-   * Activate / deactivate location.
-   */
   const handleUpdateStatus = async () => {
     if (!statusTarget) return;
 
     const locationId = getOfficeLocationId(statusTarget);
 
     if (!locationId) {
-      console.log("Selected office location object:", statusTarget);
       toast.error("Office location id missing. Please refresh and try again.");
       return;
     }
@@ -509,8 +548,8 @@ export default function OfficeLocationsPage() {
 
       toast.success(
         statusTarget.isActive
-          ? "Office location deactivated"
-          : "Office location activated"
+          ? "Office location deactivated."
+          : "Office location activated."
       );
 
       setStatusTarget(null);
@@ -519,31 +558,24 @@ export default function OfficeLocationsPage() {
       await fetchLocations(false);
     } catch (error: unknown) {
       toast.error(
-        getApiErrorMessage(error, "Failed to update location status")
+        getApiErrorMessage(error, "Failed to update location status.")
       );
     } finally {
       setIsStatusUpdating(false);
     }
   };
 
-  /**
-   * Open delete confirmation modal.
-   */
   const openDeleteModal = (location: OfficeLocation) => {
     setDeleteTarget(location);
     setIsDeleteOpen(true);
   };
 
-  /**
-   * Delete selected location.
-   */
   const handleDeleteLocation = async () => {
     if (!deleteTarget) return;
 
     const locationId = getOfficeLocationId(deleteTarget);
 
     if (!locationId) {
-      console.log("Selected office location object:", deleteTarget);
       toast.error("Office location id missing. Please refresh and try again.");
       return;
     }
@@ -553,7 +585,7 @@ export default function OfficeLocationsPage() {
 
       await deleteOfficeLocation(locationId);
 
-      toast.success("Office location deleted successfully");
+      toast.success("Office location deleted successfully.");
 
       setDeleteTarget(null);
       setIsDeleteOpen(false);
@@ -561,49 +593,47 @@ export default function OfficeLocationsPage() {
       await fetchLocations(false);
     } catch (error: unknown) {
       toast.error(
-        getApiErrorMessage(error, "Failed to delete office location")
+        getApiErrorMessage(error, "Failed to delete office location.")
       );
     } finally {
       setIsDeleting(false);
     }
   };
 
-  /**
-   * Clear search filter.
-   */
   const clearFilters = () => {
     setSearchTerm("");
     setCurrentPage(1);
   };
 
-  if (isLoading) {
-    return <OfficeLocationsLoading />;
-  }
+  if (isLoading) return <OfficeLocationsLoading />;
 
   return (
     <section className="mx-auto max-w-7xl space-y-6">
-      {/* Page header */}
+      {/* Premium hero */}
       <motion.div
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
-        className="rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8"
+        className="relative overflow-hidden rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10"
       >
-        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-          <div>
-            <p className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-300">
-              <MapPin className="h-4 w-4" />
-              Office Locations
-            </p>
+        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+        <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+          <div>
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+              <Sparkles className="h-4 w-4" />
+              Office Locations
+            </div>
+
+            <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
               Manage Office / Plant Sites
             </h1>
 
-            <p className="mt-4 max-w-2xl text-base leading-7 text-white/65">
-              Manage company offices and plant sites. Employee attendance is not
-              restricted to these locations; actual check-in/check-out latitude,
-              longitude and address will still be shown in Attendance.
+            <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
+              Manage company offices and plant sites. Attendance is not
+              restricted to these locations; actual employee geo proof is shown
+              on attendance pages.
             </p>
           </div>
 
@@ -619,7 +649,7 @@ export default function OfficeLocationsPage() {
 
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
-                <Button className="h-11 rounded-xl bg-amber-400 px-5 font-bold text-black hover:bg-amber-300">
+                <Button className="h-11 rounded-xl bg-amber-400 px-5 font-black text-black hover:bg-amber-300">
                   <Plus className="mr-2 h-4 w-4" />
                   Create Location
                 </Button>
@@ -750,22 +780,25 @@ export default function OfficeLocationsPage() {
 
       {/* Summary cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <OfficeLocationSummaryCard
+        <SummaryCard
           label="Total Locations"
           value={locationSummary.total}
+          description="Unique locations available."
           icon={MapPin}
         />
 
-        <OfficeLocationSummaryCard
+        <SummaryCard
           label="Active Locations"
           value={locationSummary.active}
+          description="Locations currently active."
           icon={Power}
           tone="success"
         />
 
-        <OfficeLocationSummaryCard
+        <SummaryCard
           label="Inactive Locations"
           value={locationSummary.inactive}
+          description="Locations currently inactive."
           icon={Power}
           tone="danger"
         />
@@ -776,11 +809,14 @@ export default function OfficeLocationsPage() {
         <CardContent className="p-0">
           {/* Filters */}
           <div className="space-y-4 border-b border-white/10 p-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <h2 className="text-xl font-black text-white">
-                  Location List
-                </h2>
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-200">
+                  <Filter className="h-3.5 w-3.5" />
+                  Location Directory
+                </div>
+
+                <h2 className="text-xl font-black text-white">Location List</h2>
                 <p className="mt-1 text-sm text-white/50">
                   Showing {filteredLocations.length === 0 ? 0 : startIndex + 1}
                   -{Math.min(endIndex, filteredLocations.length)} of{" "}
@@ -828,112 +864,99 @@ export default function OfficeLocationsPage() {
           {/* Responsive list */}
           <div className="divide-y divide-white/10">
             {filteredLocations.length === 0 ? (
-              <div className="p-10 text-center text-white/50">
-                No office locations found.
-              </div>
+              <EmptyState clearFilters={clearFilters} />
             ) : (
-              paginatedLocations.map((location) => (
-                <div
-                  key={
-                    getOfficeLocationId(location) ||
-                    `${location.name}-${location.latitude}-${location.longitude}`
-                  }
-                  className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1.3fr_1.5fr_1fr_0.8fr_1.2fr] xl:items-center xl:gap-4"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm text-white/40 xl:hidden">Location</p>
-                    <p className="break-words font-bold text-white">
-                      {location.name}
-                    </p>
-                    <p className="mt-1 text-xs text-white/45">
-                      Radius: {getOfficeLocationRadius(location)}m
-                    </p>
-                    <p className="mt-1 text-xs text-white/45">
-                      Created: {formatDate(location.createdAt)}
-                    </p>
+              paginatedLocations.map((location) => {
+                const locationId = getOfficeLocationId(location);
+                const mapUrl = getMapUrl(location.latitude, location.longitude);
+
+                return (
+                  <div
+                    key={getOfficeLocationUniqueKey(location)}
+                    className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1.3fr_1.5fr_1fr_0.8fr_1.2fr] xl:items-center xl:gap-4"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-white/40 xl:hidden">
+                        Location
+                      </p>
+                      <p className="break-words font-black text-white">
+                        {location.name}
+                      </p>
+                      <p className="mt-1 text-xs text-white/45">
+                        ID: {locationId ? locationId.slice(0, 8) : "—"} •
+                        Radius: {getOfficeLocationRadius(location)}m
+                      </p>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="text-sm text-white/40 xl:hidden">Address</p>
+                      <p className="line-clamp-2 break-words text-sm text-white/65">
+                        {location.address || "No address"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm text-white/40 xl:hidden">
+                        Coordinates
+                      </p>
+                      <a
+                        href={mapUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 text-sm font-bold text-amber-300 hover:text-amber-200"
+                      >
+                        {Number(location.latitude).toFixed(4)},{" "}
+                        {Number(location.longitude).toFixed(4)}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+
+                    <div>
+                      <p className="mb-1 text-sm text-white/40 xl:hidden">
+                        Status
+                      </p>
+                      <Badge className={getStatusBadgeClass(location.isActive)}>
+                        {location.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row xl:justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openStatusModal(location)}
+                        className="rounded-xl border-emerald-300/20 bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/20"
+                      >
+                        <Power className="mr-1 h-3.5 w-3.5" />
+                        {location.isActive ? "Deactivate" : "Activate"}
+                      </Button>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openEditModal(location)}
+                        className="rounded-xl border-amber-300/20 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20"
+                      >
+                        <Edit className="mr-1 h-3.5 w-3.5" />
+                        Edit
+                      </Button>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openDeleteModal(location)}
+                        className="rounded-xl border-red-300/20 bg-red-300/10 text-red-100 hover:bg-red-300/20"
+                      >
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        Delete
+                      </Button>
+                    </div>
                   </div>
-
-                  <div className="min-w-0">
-                    <p className="text-sm text-white/40 xl:hidden">Address</p>
-                    <p className="line-clamp-2 break-words text-sm text-white/65">
-                      {location.address || "No address"}
-                    </p>
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="text-sm text-white/40 xl:hidden">
-                      Coordinates
-                    </p>
-                    <p className="break-words text-sm font-semibold text-white/75">
-                      {location.latitude}, {location.longitude}
-                    </p>
-
-                    <a
-                      href={getMapUrl(location.latitude, location.longitude)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-flex items-center text-xs font-bold text-amber-300 hover:text-amber-200"
-                    >
-                      Open Map
-                      <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                    </a>
-                  </div>
-
-                  <div>
-                    <p className="mb-1 text-sm text-white/40 xl:hidden">
-                      Status
-                    </p>
-                    <Badge
-                      className={
-                        location.isActive
-                          ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
-                          : "border-red-300/20 bg-red-300/10 text-red-200"
-                      }
-                    >
-                      {location.isActive ? "ACTIVE" : "INACTIVE"}
-                    </Badge>
-                  </div>
-
-                  <div className="flex flex-col gap-2 sm:flex-row xl:justify-end">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openEditModal(location)}
-                      className="rounded-xl border-amber-300/20 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20"
-                    >
-                      <Edit className="mr-1 h-3.5 w-3.5" />
-                      Edit
-                    </Button>
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openStatusModal(location)}
-                      className={
-                        location.isActive
-                          ? "rounded-xl border-orange-300/20 bg-orange-300/10 text-orange-100 hover:bg-orange-300/20"
-                          : "rounded-xl border-emerald-300/20 bg-emerald-300/10 text-emerald-100 hover:bg-emerald-300/20"
-                      }
-                    >
-                      <Power className="mr-1 h-3.5 w-3.5" />
-                      {location.isActive ? "Deactivate" : "Activate"}
-                    </Button>
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openDeleteModal(location)}
-                      className="rounded-xl border-red-300/20 bg-red-300/10 text-red-100 hover:bg-red-300/20"
-                    >
-                      <Trash2 className="mr-1 h-3.5 w-3.5" />
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -999,6 +1022,28 @@ export default function OfficeLocationsPage() {
         </CardContent>
       </Card>
 
+      {/* Note */}
+      <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black text-white">
+                Reference Location Scope
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-white/55">
+                Locations are reference-only right now. Attendance is not blocked
+                outside the radius, but employee actual location/photo proof is
+                still visible to Admin/HR.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Edit modal */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto border-amber-100/15 bg-[#17100b] text-white sm:max-w-2xl">
@@ -1007,18 +1052,31 @@ export default function OfficeLocationsPage() {
               Edit Office Location
             </DialogTitle>
             <p className="text-sm text-white/50">
-              Update office or plant site location details.
+              Update location name, address, coordinates and reference radius.
             </p>
           </DialogHeader>
+
+          {selectedLocation ? (
+            <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4 sm:grid-cols-2">
+              <DetailPill
+                icon={MapPin}
+                label="Location"
+                value={selectedLocation.name}
+              />
+              <DetailPill
+                icon={Power}
+                label="Status"
+                value={selectedLocation.isActive ? "Active" : "Inactive"}
+              />
+            </div>
+          ) : null}
 
           <div className="grid gap-4 pt-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label>Location Name</Label>
               <Input
                 value={editForm.name}
-                onChange={(event) =>
-                  updateEditForm("name", event.target.value)
-                }
+                onChange={(event) => updateEditForm("name", event.target.value)}
                 className="border-white/10 bg-white/[0.04] text-white placeholder:text-white/35"
               />
             </div>
@@ -1120,7 +1178,7 @@ export default function OfficeLocationsPage() {
               {statusTarget?.isActive ? "Deactivate" : "Activate"} Location
             </DialogTitle>
             <p className="text-sm text-white/50">
-              This will update location active status only.
+              Confirm status update for selected office/plant location.
             </p>
           </DialogHeader>
 
@@ -1129,7 +1187,7 @@ export default function OfficeLocationsPage() {
               {statusTarget?.name || "Selected location"}
             </p>
             <p className="mt-1 text-sm text-white/50">
-              {statusTarget?.address || "No address"}
+              Current status: {statusTarget?.isActive ? "Active" : "Inactive"}
             </p>
           </div>
 
@@ -1154,10 +1212,8 @@ export default function OfficeLocationsPage() {
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Updating...
                 </>
-              ) : statusTarget?.isActive ? (
-                "Deactivate"
               ) : (
-                "Activate"
+                "Confirm"
               )}
             </Button>
           </div>
@@ -1169,10 +1225,10 @@ export default function OfficeLocationsPage() {
         <DialogContent className="border-red-300/20 bg-[#17100b] text-white sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black text-red-100">
-              Delete Office Location
+              Delete Location
             </DialogTitle>
             <p className="text-sm text-white/50">
-              This action will delete the selected office location if backend
+              This will remove the selected office/plant location if backend
               allows it.
             </p>
           </DialogHeader>

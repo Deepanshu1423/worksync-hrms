@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ElementType } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ElementType,
+} from "react";
 import { isAxiosError } from "axios";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
-  CalendarCheck,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -14,10 +20,13 @@ import {
   ChevronsRight,
   ClipboardList,
   Clock3,
+  Filter,
   LayoutDashboard,
   LogOut,
   RefreshCcw,
   Search,
+  ShieldCheck,
+  Sparkles,
   Timer,
   UserRound,
   UsersRound,
@@ -57,7 +66,7 @@ type ApiErrorResponse = {
   errors?: BackendValidationIssue[] | Record<string, string[]>;
 };
 
-type TaskStatus =
+type TaskStatusFilter =
   | "ALL"
   | "PENDING"
   | "IN_PROGRESS"
@@ -65,12 +74,15 @@ type TaskStatus =
   | "COMPLETED"
   | "CANCELLED";
 
-type TaskPriority = "ALL" | "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+type TaskPriorityFilter = "ALL" | "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
 const TEAM_TASKS_PER_PAGE = 10;
 
 /**
  * Reads logged-in user from localStorage.
+ *
+ * Important:
+ * This function must run only in browser-side code.
  */
 function getStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
@@ -135,6 +147,16 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   }
 
   if (typeof data?.message === "string") {
+    const lowerMessage = data.message.toLowerCase();
+
+    if (
+      lowerMessage.includes("invalid `prisma.") ||
+      lowerMessage.includes("unknown field") ||
+      lowerMessage.includes("available options are marked")
+    ) {
+      return "Backend database field mismatch. Please check task service and Prisma model.";
+    }
+
     return data.message;
   }
 
@@ -170,6 +192,26 @@ function isTaskOverdue(task: ManagerTeamTask) {
   dueDate.setHours(0, 0, 0, 0);
 
   return dueDate < today;
+}
+
+/**
+ * Creates a stable key for duplicate checking.
+ */
+function getTaskUniqueKey(task: ManagerTeamTask) {
+  return (
+    task.id ||
+    [
+      task.title,
+      task.assignedTo?.id,
+      task.assignedTo?.employeeCode,
+      task.project?.id,
+      task.status,
+      task.priority,
+      task.dueDate,
+    ]
+      .filter(Boolean)
+      .join("-")
+  );
 }
 
 /**
@@ -224,15 +266,16 @@ function getTaskPriorityBadgeClass(priority: string) {
 
 /**
  * Loading skeleton.
+ * First render loading UI prevents hydration mismatch.
  */
 function ManagerTeamTasksLoading() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
       <section className="mx-auto max-w-7xl space-y-6">
-        <Skeleton className="h-44 rounded-[2rem] bg-white/10" />
+        <Skeleton className="h-48 rounded-[2rem] bg-white/10" />
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
             <Skeleton key={index} className="h-32 rounded-3xl bg-white/10" />
           ))}
         </div>
@@ -249,34 +292,71 @@ function ManagerTeamTasksLoading() {
 function TaskSummaryCard({
   label,
   value,
+  description,
   icon: Icon,
   tone = "default",
 }: {
   label: string;
   value: number | string;
+  description: string;
   icon: ElementType;
-  tone?: "default" | "success" | "warning" | "danger";
+  tone?: "default" | "success" | "warning" | "danger" | "info";
 }) {
   const toneClass = {
     default: "bg-amber-300/10 text-amber-300",
     success: "bg-emerald-300/10 text-emerald-300",
     warning: "bg-orange-300/10 text-orange-300",
     danger: "bg-red-300/10 text-red-300",
+    info: "bg-blue-300/10 text-blue-200",
   };
 
   return (
-    <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-      <CardContent className="p-5">
+    <Card className="group overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+      <CardContent className="relative p-5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-300/5 blur-2xl transition group-hover:bg-amber-300/10" />
+
         <div
           className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl ${toneClass[tone]}`}
         >
           <Icon className="h-5 w-5" />
         </div>
 
-        <p className="text-sm text-white/55">{label}</p>
+        <p className="text-sm font-semibold text-white/55">{label}</p>
         <p className="mt-1 text-2xl font-black text-white">{value}</p>
+        <p className="mt-2 text-xs leading-5 text-white/45">{description}</p>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Empty state for team tasks.
+ */
+function EmptyTasksState({ clearFilters }: { clearFilters: () => void }) {
+  return (
+    <div className="p-10">
+      <div className="mx-auto max-w-md rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+          <ClipboardList className="h-6 w-6" />
+        </div>
+
+        <h3 className="text-xl font-black text-white">No team tasks found</h3>
+
+        <p className="mt-2 text-sm leading-6 text-white/50">
+          No task matched your current search, status or priority filter. Clear
+          filters and try again.
+        </p>
+
+        <Button
+          type="button"
+          onClick={clearFilters}
+          variant="outline"
+          className="mt-5 rounded-xl border-amber-200/30 bg-white/5 text-white hover:bg-white/10"
+        >
+          Clear Filters
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -293,8 +373,9 @@ export default function ManagerTeamTasksPage() {
   const [tasks, setTasks] = useState<ManagerTeamTask[]>([]);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<TaskStatus>("ALL");
-  const [priorityFilter, setPriorityFilter] = useState<TaskPriority>("ALL");
+  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("ALL");
+  const [priorityFilter, setPriorityFilter] =
+    useState<TaskPriorityFilter>("ALL");
 
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
@@ -302,6 +383,7 @@ export default function ManagerTeamTasksPage() {
 
   /**
    * Client-side role protection.
+   * Only MANAGER users can access this page.
    */
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -340,87 +422,84 @@ export default function ManagerTeamTasksPage() {
   }, [router]);
 
   /**
+   * Fetch manager team tasks from backend.
+   */
+  const fetchTeamTasks = useCallback(async (showSuccessToast = false) => {
+    try {
+      setIsRefreshing(showSuccessToast);
+
+      const records = await getManagerTeamTasks();
+
+      setTasks(records);
+
+      if (showSuccessToast) {
+        toast.success("Team tasks refreshed successfully.");
+      }
+    } catch (error: unknown) {
+      toast.error(
+        getApiErrorMessage(error, "Failed to fetch team tasks. Please try again.")
+      );
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  /**
    * Load manager team tasks after session is ready.
    */
   useEffect(() => {
     if (!isPageReady || !user || user.role !== "MANAGER") return;
 
-    let isMounted = true;
-
-    const loadTasks = async () => {
-      try {
-        const records = await getManagerTeamTasks();
-
-        if (isMounted) {
-          setTasks(records);
-        }
-      } catch (error: unknown) {
-        if (isMounted) {
-          toast.error(
-            getApiErrorMessage(
-              error,
-              "Failed to fetch team tasks. Please try again."
-            )
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void loadTasks();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isPageReady, user]);
+    void fetchTeamTasks(false);
+  }, [fetchTeamTasks, isPageReady, user]);
 
   /**
-   * Refresh task list manually.
+   * Duplicate-safe tasks.
+   *
+   * Important:
+   * Always use this array for summary, filters, pagination and display.
    */
-  const handleRefresh = async () => {
-    try {
-      setIsRefreshing(true);
+  const uniqueTasks = useMemo(() => {
+    const taskMap = new Map<string, ManagerTeamTask>();
 
-      const records = await getManagerTeamTasks();
+    tasks.forEach((task) => {
+      const uniqueKey = getTaskUniqueKey(task);
 
-      setTasks(records);
-      toast.success("Team tasks refreshed successfully.");
-    } catch (error: unknown) {
-      toast.error(
-        getApiErrorMessage(error, "Failed to refresh team tasks.")
-      );
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
+      if (!uniqueKey) return;
+
+      if (!taskMap.has(uniqueKey)) {
+        taskMap.set(uniqueKey, task);
+      }
+    });
+
+    return Array.from(taskMap.values());
+  }, [tasks]);
 
   /**
    * Summary calculation.
    */
   const taskSummary = useMemo(() => {
-    const pending = tasks.filter((task) => task.status === "PENDING").length;
+    const pending = uniqueTasks.filter((task) => task.status === "PENDING")
+      .length;
 
-    const inProgress = tasks.filter(
+    const inProgress = uniqueTasks.filter(
       (task) => task.status === "IN_PROGRESS"
     ).length;
 
-    const completed = tasks.filter(
-      (task) => task.status === "COMPLETED"
-    ).length;
+    const completed = uniqueTasks.filter((task) => task.status === "COMPLETED")
+      .length;
 
-    const overdue = tasks.filter((task) => isTaskOverdue(task)).length;
+    const overdue = uniqueTasks.filter((task) => isTaskOverdue(task)).length;
 
     return {
-      total: tasks.length,
+      total: uniqueTasks.length,
       pending,
       inProgress,
       completed,
       overdue,
     };
-  }, [tasks]);
+  }, [uniqueTasks]);
 
   /**
    * Search + status + priority filtering.
@@ -428,7 +507,7 @@ export default function ManagerTeamTasksPage() {
   const filteredTasks = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
 
-    return tasks.filter((task) => {
+    return uniqueTasks.filter((task) => {
       const matchesStatus =
         statusFilter === "ALL" ? true : task.status === statusFilter;
 
@@ -453,13 +532,11 @@ export default function ManagerTeamTasksPage() {
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch = keyword
-        ? searchableText.includes(keyword)
-        : true;
+      const matchesSearch = keyword ? searchableText.includes(keyword) : true;
 
       return matchesStatus && matchesPriority && matchesSearch;
     });
-  }, [tasks, searchTerm, statusFilter, priorityFilter]);
+  }, [uniqueTasks, searchTerm, statusFilter, priorityFilter]);
 
   /**
    * Pagination calculation.
@@ -502,27 +579,30 @@ export default function ManagerTeamTasksPage() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
       <section className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
+        {/* Premium header */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
-          className="rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8"
+          className="relative overflow-hidden rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10"
         >
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-            <div>
-              <p className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-300">
-                <ClipboardList className="h-4 w-4" />
-                Manager Team Tasks
-              </p>
+          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
-                Team Task Records
+          <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+            <div>
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+                <Sparkles className="h-4 w-4" />
+                Manager Team Tasks
+              </div>
+
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
+                Team Task Monitor
               </h1>
 
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/65">
-                View tasks assigned to your team members with status, priority,
-                due date, project and employee details.
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
+                Track assigned team tasks, priorities, due dates, project
+                mapping and current task progress in one premium manager view.
               </p>
             </div>
 
@@ -537,31 +617,17 @@ export default function ManagerTeamTasksPage() {
               </Button>
 
               <Button
-                onClick={() => router.push("/manager/team-attendance")}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-              >
-                <UsersRound className="mr-2 h-4 w-4" />
-                Team Attendance
-              </Button>
-
-              <Button
-                onClick={handleRefresh}
+                onClick={() => fetchTeamTasks(true)}
                 disabled={isRefreshing}
                 variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
+                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10 disabled:opacity-60"
               >
-                {isRefreshing ? (
-                  <>
-                    <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
-                    Refreshing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCcw className="mr-2 h-4 w-4" />
-                    Refresh
-                  </>
-                )}
+                <RefreshCcw
+                  className={`mr-2 h-4 w-4 ${
+                    isRefreshing ? "animate-spin" : ""
+                  }`}
+                />
+                Refresh
               </Button>
 
               <Button
@@ -577,23 +643,34 @@ export default function ManagerTeamTasksPage() {
         </motion.div>
 
         {/* Summary cards */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <TaskSummaryCard
             label="Total Tasks"
             value={taskSummary.total}
+            description="Unique team tasks available."
             icon={ClipboardList}
+          />
+
+          <TaskSummaryCard
+            label="Pending"
+            value={taskSummary.pending}
+            description="Tasks waiting to start."
+            icon={Timer}
+            tone="warning"
           />
 
           <TaskSummaryCard
             label="In Progress"
             value={taskSummary.inProgress}
+            description="Tasks currently being worked on."
             icon={Clock3}
-            tone="warning"
+            tone="info"
           />
 
           <TaskSummaryCard
             label="Completed"
             value={taskSummary.completed}
+            description="Tasks marked completed."
             icon={CheckCircle2}
             tone="success"
           />
@@ -601,8 +678,9 @@ export default function ManagerTeamTasksPage() {
           <TaskSummaryCard
             label="Overdue"
             value={taskSummary.overdue}
+            description="Open tasks past due date."
             icon={AlertTriangle}
-            tone="danger"
+            tone={taskSummary.overdue > 0 ? "danger" : "default"}
           />
         </div>
 
@@ -611,11 +689,15 @@ export default function ManagerTeamTasksPage() {
           <CardContent className="p-0">
             {/* Filters */}
             <div className="space-y-4 border-b border-white/10 p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                 <div>
-                  <h2 className="text-xl font-black text-white">
-                    Team Task List
-                  </h2>
+                  <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-200">
+                    <Filter className="h-3.5 w-3.5" />
+                    Team Task Directory
+                  </div>
+
+                  <h2 className="text-xl font-black text-white">Task List</h2>
+
                   <p className="mt-1 text-sm text-white/50">
                     Showing {filteredTasks.length === 0 ? 0 : startIndex + 1}-
                     {Math.min(endIndex, filteredTasks.length)} of{" "}
@@ -623,7 +705,7 @@ export default function ManagerTeamTasksPage() {
                   </p>
                 </div>
 
-                <div className="grid w-full gap-3 sm:grid-cols-2 xl:max-w-4xl xl:grid-cols-[1.5fr_1fr_1fr_auto]">
+                <div className="grid w-full gap-3 sm:grid-cols-2 xl:max-w-5xl xl:grid-cols-[1.5fr_1fr_1fr_auto]">
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-300" />
                     <Input
@@ -632,7 +714,7 @@ export default function ManagerTeamTasksPage() {
                         setSearchTerm(event.target.value);
                         setCurrentPage(1);
                       }}
-                      placeholder="Search task or employee..."
+                      placeholder="Search task, employee, project..."
                       className="h-11 border-white/10 bg-white/[0.04] pl-10 text-white placeholder:text-white/35"
                     />
                   </div>
@@ -640,7 +722,7 @@ export default function ManagerTeamTasksPage() {
                   <Select
                     value={statusFilter}
                     onValueChange={(value) => {
-                      setStatusFilter(value as TaskStatus);
+                      setStatusFilter(value as TaskStatusFilter);
                       setCurrentPage(1);
                     }}
                   >
@@ -661,7 +743,7 @@ export default function ManagerTeamTasksPage() {
                   <Select
                     value={priorityFilter}
                     onValueChange={(value) => {
-                      setPriorityFilter(value as TaskPriority);
+                      setPriorityFilter(value as TaskPriorityFilter);
                       setCurrentPage(1);
                     }}
                   >
@@ -691,38 +773,34 @@ export default function ManagerTeamTasksPage() {
             </div>
 
             {/* Desktop header */}
-            <div className="hidden border-b border-white/10 px-5 py-4 xl:grid xl:grid-cols-[1.5fr_1.2fr_0.85fr_0.85fr_0.9fr_1fr] xl:gap-4">
+            <div className="hidden border-b border-white/10 px-5 py-4 xl:grid xl:grid-cols-[1.45fr_1.15fr_1.05fr_0.8fr_0.85fr_0.95fr] xl:gap-4">
               <p className="text-sm font-bold text-white/50">Task</p>
-              <p className="text-sm font-bold text-white/50">Employee</p>
-              <p className="text-sm font-bold text-white/50">Status</p>
+              <p className="text-sm font-bold text-white/50">Assigned To</p>
+              <p className="text-sm font-bold text-white/50">Project</p>
               <p className="text-sm font-bold text-white/50">Priority</p>
+              <p className="text-sm font-bold text-white/50">Status</p>
               <p className="text-sm font-bold text-white/50">Due Date</p>
-              <p className="text-right text-sm font-bold text-white/50">
-                Project
-              </p>
             </div>
 
-            {/* Responsive task list */}
+            {/* Responsive records */}
             <div className="divide-y divide-white/10">
               {filteredTasks.length === 0 ? (
-                <div className="p-10 text-center text-white/50">
-                  No team tasks found.
-                </div>
+                <EmptyTasksState clearFilters={clearFilters} />
               ) : (
                 paginatedTasks.map((task) => (
                   <div
-                    key={task.id}
-                    className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1.5fr_1.2fr_0.85fr_0.85fr_0.9fr_1fr] xl:items-center xl:gap-4"
+                    key={getTaskUniqueKey(task)}
+                    className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1.45fr_1.15fr_1.05fr_0.8fr_0.85fr_0.95fr] xl:items-center xl:gap-4"
                   >
-                    {/* Task */}
                     <div className="min-w-0">
                       <p className="text-sm text-white/40 xl:hidden">Task</p>
-                      <p className="break-words font-bold text-white">
+
+                      <p className="break-words font-black text-white">
                         {task.title}
                       </p>
 
-                      <p className="mt-1 break-words text-sm leading-6 text-white/50">
-                        {task.description || "No description added."}
+                      <p className="mt-1 line-clamp-2 break-words text-xs text-white/45">
+                        {task.description || "No description"}
                       </p>
 
                       {isTaskOverdue(task) ? (
@@ -732,66 +810,65 @@ export default function ManagerTeamTasksPage() {
                       ) : null}
                     </div>
 
-                    {/* Employee */}
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm text-white/40 xl:hidden">
-                        Employee
+                        Assigned To
                       </p>
-                      <p className="break-words font-bold text-white">
-                        {task.assignedTo?.fullName || "Unassigned"}
+
+                      <p className="flex items-center gap-2 break-words font-semibold text-white">
+                        <UserRound className="h-4 w-4 shrink-0 text-amber-300" />
+                        {task.assignedTo?.fullName || "—"}
                       </p>
+
                       <p className="mt-1 text-xs text-white/45">
-                        {task.assignedTo?.employeeCode || "No code"}
+                        {task.assignedTo?.employeeCode || "No Code"}
+                      </p>
+
+                      <p className="mt-1 break-words text-xs text-white/45">
+                        {task.assignedTo?.department?.name || "No department"}{" "}
+                        •{" "}
+                        {task.assignedTo?.designation?.name ||
+                          "No designation"}
                       </p>
                     </div>
 
-                    {/* Status */}
+                    <div className="min-w-0">
+                      <p className="text-sm text-white/40 xl:hidden">Project</p>
+
+                      <p className="break-words text-sm font-semibold text-white/70">
+                        {task.project?.name || "No project"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="mb-1 text-sm text-white/40 xl:hidden">
+                        Priority
+                      </p>
+
+                      <Badge className={getTaskPriorityBadgeClass(task.priority)}>
+                        {task.priority}
+                      </Badge>
+                    </div>
+
                     <div>
                       <p className="mb-1 text-sm text-white/40 xl:hidden">
                         Status
                       </p>
+
                       <Badge className={getTaskStatusBadgeClass(task.status)}>
                         {task.status.replaceAll("_", " ")}
                       </Badge>
                     </div>
 
-                    {/* Priority */}
                     <div>
                       <p className="mb-1 text-sm text-white/40 xl:hidden">
-                        Priority
-                      </p>
-                      <Badge
-                        className={getTaskPriorityBadgeClass(task.priority)}
-                      >
-                        {task.priority}
-                      </Badge>
-                    </div>
-
-                    {/* Due date */}
-                    <div>
-                      <p className="text-sm text-white/40 xl:hidden">
                         Due Date
                       </p>
+
                       <p className="flex items-center gap-2 text-sm text-white/70">
-                        <Timer className="h-4 w-4 shrink-0 text-amber-300" />
+                        <CalendarDays className="h-4 w-4 shrink-0 text-amber-300" />
                         {formatDate(task.dueDate)}
                       </p>
-                    </div>
-
-                    {/* Project */}
-                    <div className="xl:text-right">
-                      <p className="text-sm text-white/40 xl:hidden">
-                        Project
-                      </p>
-                      <p className="break-words text-sm font-semibold text-white">
-                        {task.project?.name || "No project"}
-                      </p>
-
-                      {task.createdBy?.fullName ? (
-                        <p className="mt-1 text-xs text-white/45">
-                          By: {task.createdBy.fullName}
-                        </p>
-                      ) : null}
                     </div>
                   </div>
                 ))
@@ -801,8 +878,8 @@ export default function ManagerTeamTasksPage() {
             {/* Pagination */}
             <div className="flex flex-col gap-4 border-t border-white/10 p-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-white/50">
-                Page {safeCurrentPage} of {totalPages} •{" "}
-                {TEAM_TASKS_PER_PAGE} tasks per page
+                Page {safeCurrentPage} of {totalPages} • {TEAM_TASKS_PER_PAGE}{" "}
+                tasks per page
               </p>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -864,18 +941,20 @@ export default function ManagerTeamTasksPage() {
 
         {/* Note */}
         <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-          <CardContent className="p-5">
+          <CardContent className="p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
-                <UserRound className="h-5 w-5" />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+                <ShieldCheck className="h-5 w-5" />
               </div>
 
               <div>
-                <h3 className="font-black text-white">Manager Task Scope</h3>
+                <h3 className="text-lg font-black text-white">
+                  Duplicate-safe Team Tasks
+                </h3>
                 <p className="mt-2 text-sm leading-6 text-white/55">
-                  This page uses GET /api/tasks. Your backend should return only
-                  tasks visible under the logged-in manager scope. If all tasks
-                  appear, manager filtering should be checked in task service.
+                  This page shows unique team tasks only. Duplicate rows from
+                  API response are filtered before summary, search, pagination
+                  and list rendering.
                 </p>
               </div>
             </div>

@@ -13,12 +13,15 @@ import {
   ChevronsRight,
   Clock3,
   ExternalLink,
+  Filter,
   History,
   LayoutDashboard,
   LogOut,
   MapPin,
   RefreshCcw,
   Search,
+  ShieldCheck,
+  Sparkles,
   Timer,
   UserCheck,
   UserX,
@@ -60,12 +63,6 @@ type AttendanceFilterStatus = "ALL" | "PRESENT" | "LATE" | "ABSENT" | "HALF_DAY"
 
 const ATTENDANCE_HISTORY_PER_PAGE = 10;
 
-/**
- * Reads logged-in user from localStorage.
- *
- * Important:
- * This function must run only in browser-side code.
- */
 function getStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
 
@@ -80,10 +77,6 @@ function getStoredUser(): AuthUser | null {
   }
 }
 
-/**
- * Converts backend/API errors into clean user-friendly messages.
- * This prevents raw backend/Zod/Prisma errors from showing in toast.
- */
 function getApiErrorMessage(error: unknown, fallback: string) {
   if (!isAxiosError<ApiErrorResponse>(error)) {
     return fallback;
@@ -113,8 +106,7 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   }
 
   if (Array.isArray(data?.errors)) {
-    const firstError = data.errors[0];
-    return firstError?.message || fallback;
+    return data.errors[0]?.message || fallback;
   }
 
   if (data?.errors && typeof data.errors === "object") {
@@ -151,9 +143,6 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-/**
- * Formats date into readable UI format.
- */
 function formatDate(value?: string | null) {
   if (!value) return "—";
 
@@ -162,9 +151,6 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
-/**
- * Formats date-time into readable UI format.
- */
 function formatDateTime(value?: string | null) {
   if (!value) return "—";
 
@@ -174,9 +160,6 @@ function formatDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
-/**
- * Converts minutes into readable hours/minutes format.
- */
 function formatMinutes(minutes?: number | null) {
   if (!minutes || minutes <= 0) return "0 min";
 
@@ -188,28 +171,24 @@ function formatMinutes(minutes?: number | null) {
   return `${hours}h ${remainingMinutes}m`;
 }
 
-/**
- * Returns YYYY-MM-DD from record date for date input comparison.
- */
 function getDateInputValue(value?: string | null) {
   if (!value) return "";
 
   return new Date(value).toISOString().split("T")[0];
 }
 
-/**
- * Builds Google Maps link from latitude and longitude.
- */
-function getMapUrl(latitude?: number | null, longitude?: number | null) {
+function getMapUrl(
+  latitude?: number | string | null,
+  longitude?: number | string | null
+) {
   if (latitude === null || latitude === undefined) return "";
   if (longitude === null || longitude === undefined) return "";
 
-  return `https://www.google.com/maps?q=${latitude},${longitude}`;
+  return `https://www.google.com/maps?q=${Number(latitude)},${Number(
+    longitude
+  )}`;
 }
 
-/**
- * Attendance status badge style.
- */
 function getAttendanceStatusBadgeClass(status?: string | null) {
   if (status === "PRESENT") {
     return "border-emerald-300/20 bg-emerald-300/10 text-emerald-200";
@@ -230,18 +209,29 @@ function getAttendanceStatusBadgeClass(status?: string | null) {
   return "border-white/10 bg-white/5 text-white/70";
 }
 
-/**
- * Loading skeleton.
- * This UI is rendered on first server/client render to avoid hydration mismatch.
- */
+function getAttendanceUniqueKey(record: AttendanceRecord) {
+  return (
+    record.id ||
+    [
+      record.user?.id,
+      record.user?.employeeCode,
+      record.date,
+      record.checkInAt,
+      record.checkOutAt,
+    ]
+      .filter(Boolean)
+      .join("-")
+  );
+}
+
 function AttendanceHistoryLoading() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
       <section className="mx-auto max-w-7xl space-y-6">
-        <Skeleton className="h-44 rounded-[2rem] bg-white/10" />
+        <Skeleton className="h-48 rounded-[2rem] bg-white/10" />
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
             <Skeleton key={index} className="h-32 rounded-3xl bg-white/10" />
           ))}
         </div>
@@ -252,50 +242,79 @@ function AttendanceHistoryLoading() {
   );
 }
 
-/**
- * Summary card component.
- */
 function AttendanceSummaryCard({
   label,
   value,
+  description,
   icon: Icon,
   tone = "default",
 }: {
   label: string;
   value: number | string;
+  description: string;
   icon: ElementType;
-  tone?: "default" | "success" | "warning" | "danger";
+  tone?: "default" | "success" | "warning" | "danger" | "info";
 }) {
   const toneClass = {
     default: "bg-amber-300/10 text-amber-300",
     success: "bg-emerald-300/10 text-emerald-300",
     warning: "bg-orange-300/10 text-orange-300",
     danger: "bg-red-300/10 text-red-300",
+    info: "bg-blue-300/10 text-blue-200",
   };
 
   return (
-    <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-      <CardContent className="p-5">
+    <Card className="group overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+      <CardContent className="relative p-5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-300/5 blur-2xl transition group-hover:bg-amber-300/10" />
+
         <div
           className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl ${toneClass[tone]}`}
         >
           <Icon className="h-5 w-5" />
         </div>
 
-        <p className="text-sm text-white/55">{label}</p>
+        <p className="text-sm font-semibold text-white/55">{label}</p>
         <p className="mt-1 text-2xl font-black text-white">{value}</p>
+        <p className="mt-2 text-xs leading-5 text-white/45">{description}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function EmptyAttendanceState({ clearFilters }: { clearFilters: () => void }) {
+  return (
+    <div className="p-10">
+      <div className="mx-auto max-w-md rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+          <CalendarCheck className="h-6 w-6" />
+        </div>
+
+        <h3 className="text-xl font-black text-white">
+          No attendance history found
+        </h3>
+
+        <p className="mt-2 text-sm leading-6 text-white/50">
+          No attendance record matched your current search, status or date
+          filter. Clear filters and try again.
+        </p>
+
+        <Button
+          type="button"
+          onClick={clearFilters}
+          variant="outline"
+          className="mt-5 rounded-xl border-amber-200/30 bg-white/5 text-white hover:bg-white/10"
+        >
+          Clear Filters
+        </Button>
+      </div>
+    </div>
   );
 }
 
 export default function EmployeeAttendanceHistoryPage() {
   const router = useRouter();
 
-  /**
-   * Do not read localStorage directly in initial state.
-   * This prevents hydration mismatch.
-   */
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isPageReady, setIsPageReady] = useState(false);
 
@@ -312,9 +331,6 @@ export default function EmployeeAttendanceHistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  /**
-   * Client-side role protection.
-   */
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const token = localStorage.getItem("worksync_access_token");
@@ -333,6 +349,11 @@ export default function EmployeeAttendanceHistoryPage() {
           return;
         }
 
+        if (storedUser.role === "MANAGER") {
+          router.replace("/manager/dashboard");
+          return;
+        }
+
         router.replace("/login");
         return;
       }
@@ -346,9 +367,6 @@ export default function EmployeeAttendanceHistoryPage() {
     };
   }, [router]);
 
-  /**
-   * Load attendance history after employee session is ready.
-   */
   useEffect(() => {
     if (!isPageReady || !user || user.role !== "EMPLOYEE") return;
 
@@ -384,9 +402,6 @@ export default function EmployeeAttendanceHistoryPage() {
     };
   }, [isPageReady, user]);
 
-  /**
-   * Refresh attendance history manually.
-   */
   const handleRefresh = async () => {
     try {
       setIsRefreshing(true);
@@ -408,36 +423,45 @@ export default function EmployeeAttendanceHistoryPage() {
   };
 
   /**
-   * Summary calculation.
+   * Duplicate-safe attendance history.
+   * API data -> unique records -> summary -> filters/search -> pagination -> display.
    */
-  const attendanceSummary = useMemo(() => {
-    const presentCount = attendanceHistory.filter(
-      (record) => record.status === "PRESENT"
-    ).length;
+  const uniqueAttendanceHistory = useMemo(() => {
+    const recordMap = new Map<string, AttendanceRecord>();
 
-    const lateCount = attendanceHistory.filter(
-      (record) => record.status === "LATE"
-    ).length;
+    attendanceHistory.forEach((record) => {
+      const uniqueKey = getAttendanceUniqueKey(record);
+      if (!uniqueKey) return;
 
-    const absentCount = attendanceHistory.filter(
-      (record) => record.status === "ABSENT"
-    ).length;
+      if (!recordMap.has(uniqueKey)) {
+        recordMap.set(uniqueKey, record);
+      }
+    });
 
-    return {
-      total: attendanceHistory.length,
-      present: presentCount,
-      late: lateCount,
-      absent: absentCount,
-    };
+    return Array.from(recordMap.values());
   }, [attendanceHistory]);
 
-  /**
-   * Search + status + date filtering.
-   */
+  const attendanceSummary = useMemo(() => {
+    return {
+      total: uniqueAttendanceHistory.length,
+      present: uniqueAttendanceHistory.filter(
+        (record) => record.status === "PRESENT"
+      ).length,
+      late: uniqueAttendanceHistory.filter((record) => record.status === "LATE")
+        .length,
+      absent: uniqueAttendanceHistory.filter(
+        (record) => record.status === "ABSENT"
+      ).length,
+      completed: uniqueAttendanceHistory.filter(
+        (record) => record.checkInAt && record.checkOutAt
+      ).length,
+    };
+  }, [uniqueAttendanceHistory]);
+
   const filteredAttendanceHistory = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
 
-    return attendanceHistory.filter((record) => {
+    return uniqueAttendanceHistory.filter((record) => {
       const matchesStatus =
         statusFilter === "ALL" ? true : record.status === statusFilter;
 
@@ -459,18 +483,12 @@ export default function EmployeeAttendanceHistoryPage() {
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch = keyword
-        ? searchableText.includes(keyword)
-        : true;
+      const matchesSearch = keyword ? searchableText.includes(keyword) : true;
 
       return matchesStatus && matchesDate && matchesSearch;
     });
-  }, [attendanceHistory, searchTerm, statusFilter, dateFilter]);
+  }, [uniqueAttendanceHistory, searchTerm, statusFilter, dateFilter]);
 
-  /**
-   * Pagination calculation.
-   * Only 10 records will show per page.
-   */
   const totalPages = Math.max(
     1,
     Math.ceil(filteredAttendanceHistory.length / ATTENDANCE_HISTORY_PER_PAGE)
@@ -486,9 +504,6 @@ export default function EmployeeAttendanceHistoryPage() {
     endIndex
   );
 
-  /**
-   * Clears filters and resets pagination.
-   */
   const clearFilters = () => {
     setSearchTerm("");
     setStatusFilter("ALL");
@@ -496,18 +511,11 @@ export default function EmployeeAttendanceHistoryPage() {
     setCurrentPage(1);
   };
 
-  /**
-   * Logout employee.
-   */
   const handleLogout = () => {
     clearAuthSession();
     router.replace("/login");
   };
 
-  /**
-   * First render will always show loading UI.
-   * This fixes hydration mismatch.
-   */
   if (!isPageReady || !user || user.role !== "EMPLOYEE" || isLoading) {
     return <AttendanceHistoryLoading />;
   }
@@ -515,25 +523,28 @@ export default function EmployeeAttendanceHistoryPage() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
       <section className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
+        {/* Premium header */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
-          className="rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8"
+          className="relative overflow-hidden rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10"
         >
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-            <div>
-              <p className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-300">
-                <History className="h-4 w-4" />
-                My Attendance History
-              </p>
+          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+          <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+            <div>
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+                <Sparkles className="h-4 w-4" />
+                My Attendance History
+              </div>
+
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
                 Attendance Records
               </h1>
 
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/65">
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
                 View your check-in/check-out history, working time, late time,
                 location maps and uploaded photo proof.
               </p>
@@ -562,19 +573,14 @@ export default function EmployeeAttendanceHistoryPage() {
                 onClick={handleRefresh}
                 disabled={isRefreshing}
                 variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
+                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10 disabled:opacity-60"
               >
-                {isRefreshing ? (
-                  <>
-                    <RefreshCcw className="mr-2 h-4 w-4 animate-spin" />
-                    Refreshing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCcw className="mr-2 h-4 w-4" />
-                    Refresh
-                  </>
-                )}
+                <RefreshCcw
+                  className={`mr-2 h-4 w-4 ${
+                    isRefreshing ? "animate-spin" : ""
+                  }`}
+                />
+                {isRefreshing ? "Refreshing..." : "Refresh"}
               </Button>
 
               <Button
@@ -590,32 +596,44 @@ export default function EmployeeAttendanceHistoryPage() {
         </motion.div>
 
         {/* Summary cards */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <AttendanceSummaryCard
             label="Total Records"
             value={attendanceSummary.total}
+            description="Unique attendance records."
             icon={CalendarCheck}
           />
 
           <AttendanceSummaryCard
-            label="Present Days"
+            label="Present"
             value={attendanceSummary.present}
+            description="Days marked present."
             icon={UserCheck}
             tone="success"
           />
 
           <AttendanceSummaryCard
-            label="Late Days"
+            label="Late"
             value={attendanceSummary.late}
+            description="Days marked late."
             icon={Clock3}
             tone="warning"
           />
 
           <AttendanceSummaryCard
-            label="Absent Days"
+            label="Absent"
             value={attendanceSummary.absent}
+            description="Days marked absent."
             icon={UserX}
             tone="danger"
+          />
+
+          <AttendanceSummaryCard
+            label="Completed"
+            value={attendanceSummary.completed}
+            description="Check-in and check-out completed."
+            icon={Timer}
+            tone="info"
           />
         </div>
 
@@ -624,11 +642,17 @@ export default function EmployeeAttendanceHistoryPage() {
           <CardContent className="p-0">
             {/* Filters */}
             <div className="space-y-4 border-b border-white/10 p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                 <div>
+                  <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-200">
+                    <Filter className="h-3.5 w-3.5" />
+                    Attendance Directory
+                  </div>
+
                   <h2 className="text-xl font-black text-white">
                     History List
                   </h2>
+
                   <p className="mt-1 text-sm text-white/50">
                     Showing{" "}
                     {filteredAttendanceHistory.length === 0
@@ -648,7 +672,7 @@ export default function EmployeeAttendanceHistoryPage() {
                         setSearchTerm(event.target.value);
                         setCurrentPage(1);
                       }}
-                      placeholder="Search history..."
+                      placeholder="Search status, date, address..."
                       className="h-11 border-white/10 bg-white/[0.04] pl-10 text-white placeholder:text-white/35"
                     />
                   </div>
@@ -696,7 +720,7 @@ export default function EmployeeAttendanceHistoryPage() {
             </div>
 
             {/* Desktop header */}
-            <div className="hidden border-b border-white/10 px-5 py-4 xl:grid xl:grid-cols-[1fr_1.1fr_1.1fr_0.9fr_0.9fr_1.5fr] xl:gap-4">
+            <div className="hidden border-b border-white/10 px-5 py-4 xl:grid xl:grid-cols-[1fr_1.15fr_1.15fr_0.9fr_0.85fr_1.45fr] xl:gap-4">
               <p className="text-sm font-bold text-white/50">Date</p>
               <p className="text-sm font-bold text-white/50">Check In</p>
               <p className="text-sm font-bold text-white/50">Check Out</p>
@@ -710,9 +734,7 @@ export default function EmployeeAttendanceHistoryPage() {
             {/* Responsive records */}
             <div className="divide-y divide-white/10">
               {filteredAttendanceHistory.length === 0 ? (
-                <div className="p-10 text-center text-white/50">
-                  No attendance history found.
-                </div>
+                <EmptyAttendanceState clearFilters={clearFilters} />
               ) : (
                 paginatedAttendanceHistory.map((record) => {
                   const checkInMapUrl = getMapUrl(
@@ -727,69 +749,71 @@ export default function EmployeeAttendanceHistoryPage() {
 
                   return (
                     <div
-                      key={record.id}
-                      className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1fr_1.1fr_1.1fr_0.9fr_0.9fr_1.5fr] xl:items-center xl:gap-4"
+                      key={getAttendanceUniqueKey(record)}
+                      className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1fr_1.15fr_1.15fr_0.9fr_0.85fr_1.45fr] xl:items-center xl:gap-4"
                     >
-                      {/* Date */}
                       <div>
-                        <p className="text-sm text-white/40 xl:hidden">
-                          Date
-                        </p>
-                        <p className="font-bold text-white">
+                        <p className="text-sm text-white/40 xl:hidden">Date</p>
+
+                        <p className="font-black text-white">
                           {formatDate(record.date)}
+                        </p>
+
+                        <p className="mt-1 text-xs text-white/45">
+                          Attendance day
                         </p>
                       </div>
 
-                      {/* Check In */}
                       <div>
                         <p className="text-sm text-white/40 xl:hidden">
                           Check In
                         </p>
+
                         <p className="flex items-center gap-2 text-sm text-white/70">
                           <Clock3 className="h-4 w-4 shrink-0 text-amber-300" />
                           {formatDateTime(record.checkInAt)}
                         </p>
                       </div>
 
-                      {/* Check Out */}
                       <div>
                         <p className="text-sm text-white/40 xl:hidden">
                           Check Out
                         </p>
+
                         <p className="flex items-center gap-2 text-sm text-white/70">
                           <Timer className="h-4 w-4 shrink-0 text-amber-300" />
                           {formatDateTime(record.checkOutAt)}
                         </p>
                       </div>
 
-                      {/* Work Time */}
                       <div>
                         <p className="text-sm text-white/40 xl:hidden">
                           Work Time
                         </p>
+
                         <p className="font-semibold text-white">
                           {formatMinutes(record.workingMinutes)}
                         </p>
+
                         <p className="mt-1 text-xs text-white/45">
                           Late: {formatMinutes(record.lateMinutes)}
                         </p>
                       </div>
 
-                      {/* Status */}
                       <div>
                         <p className="mb-1 text-sm text-white/40 xl:hidden">
                           Status
                         </p>
+
                         <Badge
                           className={getAttendanceStatusBadgeClass(
                             record.status
                           )}
                         >
-                          {record.status.replaceAll("_", " ")}
+                          {record.status?.replaceAll("_", " ") || "—"}
                         </Badge>
                       </div>
 
-                      {/* Proof and location */}
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
                         {record.checkInPhoto?.fileUrl ? (
                           <a
@@ -906,6 +930,28 @@ export default function EmployeeAttendanceHistoryPage() {
                 >
                   <ChevronsRight className="h-4 w-4" />
                 </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Note */}
+        <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+          <CardContent className="p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h3 className="text-lg font-black text-white">
+                  Duplicate-safe Attendance History
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-white/55">
+                  This page shows unique attendance history records only.
+                  Duplicate rows from API response are filtered before summary,
+                  search, pagination and list rendering.
+                </p>
               </div>
             </div>
           </CardContent>

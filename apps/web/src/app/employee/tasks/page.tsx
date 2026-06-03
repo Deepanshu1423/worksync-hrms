@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CalendarCheck,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -14,13 +15,16 @@ import {
   ChevronsRight,
   ClipboardList,
   Clock3,
-  ExternalLink,
+  Filter,
   History,
   LayoutDashboard,
   LogOut,
   RefreshCcw,
   Search,
+  ShieldCheck,
+  Sparkles,
   Timer,
+  UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -97,9 +101,6 @@ type MyTasksResponse = {
 
 const TASKS_PER_PAGE = 10;
 
-/**
- * Reads logged-in user from localStorage.
- */
 function getStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
 
@@ -114,9 +115,6 @@ function getStoredUser(): AuthUser | null {
   }
 }
 
-/**
- * Converts backend/API errors into clean user-friendly messages.
- */
 function getApiErrorMessage(error: unknown, fallback: string) {
   if (!isAxiosError<ApiErrorResponse>(error)) {
     return fallback;
@@ -129,45 +127,49 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   const statusCode = error.response.status;
   const data = error.response.data;
 
-  if (statusCode === 401) {
-    return "Your session has expired. Please login again.";
-  }
-
-  if (statusCode === 403) {
-    return "You do not have permission to view tasks.";
-  }
-
+  if (statusCode === 401) return "Your session has expired. Please login again.";
+  if (statusCode === 403) return "You do not have permission to view tasks.";
   if (statusCode === 404) {
     return "My Tasks API route not found. Please check backend route /tasks/my-tasks.";
   }
-
   if (statusCode >= 500) {
     return "Server error while fetching tasks. Please try again after some time.";
   }
 
-  if (Array.isArray(data?.message)) {
-    return data.message[0] || fallback;
+  if (Array.isArray(data?.errors)) {
+    return data.errors[0]?.message || fallback;
   }
 
+  if (data?.errors && typeof data.errors === "object") {
+    const firstKey = Object.keys(data.errors)[0];
+    const firstValue = data.errors[firstKey];
+
+    if (Array.isArray(firstValue)) {
+      return firstValue[0] || fallback;
+    }
+  }
+
+  if (Array.isArray(data?.message)) return data.message[0] || fallback;
+
   if (typeof data?.message === "string") {
+    const lowerMessage = data.message.toLowerCase();
+
+    if (
+      lowerMessage.includes("invalid `prisma.") ||
+      lowerMessage.includes("unknown field") ||
+      lowerMessage.includes("available options are marked")
+    ) {
+      return "Backend database field mismatch. Please check task service and Prisma model.";
+    }
+
     return data.message;
   }
 
-  if (typeof data?.error === "string") {
-    return data.error;
-  }
+  if (typeof data?.error === "string") return data.error;
 
   return fallback;
 }
 
-/**
- * Fetch logged-in employee assigned tasks.
- *
- * Expected backend route:
- * GET /api/tasks/my-tasks
- *
- * If your backend route name is different, change only this endpoint.
- */
 async function getMyTasks() {
   const response = await api.get<MyTasksResponse>("/tasks/my-tasks");
 
@@ -179,9 +181,6 @@ async function getMyTasks() {
   );
 }
 
-/**
- * Formats date into readable UI format.
- */
 function formatDate(value?: string | null) {
   if (!value) return "—";
 
@@ -190,9 +189,6 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
-/**
- * Checks whether task due date is overdue.
- */
 function isTaskOverdue(task: TaskItem) {
   if (!task.dueDate) return false;
   if (task.status === "COMPLETED" || task.status === "CANCELLED") return false;
@@ -206,9 +202,23 @@ function isTaskOverdue(task: TaskItem) {
   return dueDate < today;
 }
 
-/**
- * Task status badge style.
- */
+function getTaskUniqueKey(task: TaskItem) {
+  return (
+    task.id ||
+    [
+      task.title,
+      task.project?.id,
+      task.project?.name,
+      task.createdBy?.id,
+      task.status,
+      task.priority,
+      task.dueDate,
+    ]
+      .filter(Boolean)
+      .join("-")
+  );
+}
+
 function getTaskStatusBadgeClass(status: string) {
   if (status === "COMPLETED") {
     return "border-emerald-300/20 bg-emerald-300/10 text-emerald-200";
@@ -233,9 +243,6 @@ function getTaskStatusBadgeClass(status: string) {
   return "border-white/10 bg-white/5 text-white/70";
 }
 
-/**
- * Task priority badge style.
- */
 function getTaskPriorityBadgeClass(priority: string) {
   if (priority === "URGENT") {
     return "border-red-300/20 bg-red-300/10 text-red-200";
@@ -256,17 +263,14 @@ function getTaskPriorityBadgeClass(priority: string) {
   return "border-white/10 bg-white/5 text-white/70";
 }
 
-/**
- * Loading skeleton.
- */
 function EmployeeTasksLoading() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
       <section className="mx-auto max-w-7xl space-y-6">
-        <Skeleton className="h-44 rounded-[2rem] bg-white/10" />
+        <Skeleton className="h-48 rounded-[2rem] bg-white/10" />
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
             <Skeleton key={index} className="h-32 rounded-3xl bg-white/10" />
           ))}
         </div>
@@ -277,40 +281,73 @@ function EmployeeTasksLoading() {
   );
 }
 
-/**
- * Summary card component.
- */
 function TaskSummaryCard({
   label,
   value,
+  description,
   icon: Icon,
   tone = "default",
 }: {
   label: string;
   value: number | string;
+  description: string;
   icon: ElementType;
-  tone?: "default" | "success" | "warning" | "danger";
+  tone?: "default" | "success" | "warning" | "danger" | "info";
 }) {
   const toneClass = {
     default: "bg-amber-300/10 text-amber-300",
     success: "bg-emerald-300/10 text-emerald-300",
     warning: "bg-orange-300/10 text-orange-300",
     danger: "bg-red-300/10 text-red-300",
+    info: "bg-blue-300/10 text-blue-200",
   };
 
   return (
-    <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-      <CardContent className="p-5">
+    <Card className="group overflow-hidden border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+      <CardContent className="relative p-5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-300/5 blur-2xl transition group-hover:bg-amber-300/10" />
+
         <div
           className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl ${toneClass[tone]}`}
         >
           <Icon className="h-5 w-5" />
         </div>
 
-        <p className="text-sm text-white/55">{label}</p>
+        <p className="text-sm font-semibold text-white/55">{label}</p>
         <p className="mt-1 text-2xl font-black text-white">{value}</p>
+        <p className="mt-2 text-xs leading-5 text-white/45">{description}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function EmptyTasksState({ clearFilters }: { clearFilters: () => void }) {
+  return (
+    <div className="p-10">
+      <div className="mx-auto max-w-md rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+          <ClipboardList className="h-6 w-6" />
+        </div>
+
+        <h3 className="text-xl font-black text-white">
+          No assigned tasks found
+        </h3>
+
+        <p className="mt-2 text-sm leading-6 text-white/50">
+          No task matched your current search, status or priority filter. Clear
+          filters and try again.
+        </p>
+
+        <Button
+          type="button"
+          onClick={clearFilters}
+          variant="outline"
+          className="mt-5 rounded-xl border-amber-200/30 bg-white/5 text-white hover:bg-white/10"
+        >
+          Clear Filters
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -329,9 +366,6 @@ export default function EmployeeTasksPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  /**
-   * Client-side role protection.
-   */
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const token = localStorage.getItem("worksync_access_token");
@@ -350,6 +384,11 @@ export default function EmployeeTasksPage() {
           return;
         }
 
+        if (storedUser.role === "MANAGER") {
+          router.replace("/manager/dashboard");
+          return;
+        }
+
         router.replace("/login");
         return;
       }
@@ -363,9 +402,6 @@ export default function EmployeeTasksPage() {
     };
   }, [router]);
 
-  /**
-   * Load employee tasks after session is ready.
-   */
   useEffect(() => {
     if (!isPageReady || !user || user.role !== "EMPLOYEE") return;
 
@@ -398,9 +434,6 @@ export default function EmployeeTasksPage() {
     };
   }, [isPageReady, user]);
 
-  /**
-   * Refresh task list manually.
-   */
   const handleRefresh = async () => {
     try {
       setIsRefreshing(true);
@@ -417,37 +450,50 @@ export default function EmployeeTasksPage() {
   };
 
   /**
-   * Task summary calculation.
+   * Duplicate-safe task list.
+   * API data -> unique records -> summary -> filters/search -> pagination -> display.
    */
-  const taskSummary = useMemo(() => {
-    const pending = tasks.filter((task) => task.status === "PENDING").length;
+  const uniqueTasks = useMemo(() => {
+    const taskMap = new Map<string, TaskItem>();
 
-    const inProgress = tasks.filter(
+    tasks.forEach((task) => {
+      const uniqueKey = getTaskUniqueKey(task);
+      if (!uniqueKey) return;
+
+      if (!taskMap.has(uniqueKey)) {
+        taskMap.set(uniqueKey, task);
+      }
+    });
+
+    return Array.from(taskMap.values());
+  }, [tasks]);
+
+  const taskSummary = useMemo(() => {
+    const pending = uniqueTasks.filter((task) => task.status === "PENDING")
+      .length;
+
+    const inProgress = uniqueTasks.filter(
       (task) => task.status === "IN_PROGRESS"
     ).length;
 
-    const completed = tasks.filter(
-      (task) => task.status === "COMPLETED"
-    ).length;
+    const completed = uniqueTasks.filter((task) => task.status === "COMPLETED")
+      .length;
 
-    const overdue = tasks.filter((task) => isTaskOverdue(task)).length;
+    const overdue = uniqueTasks.filter((task) => isTaskOverdue(task)).length;
 
     return {
-      total: tasks.length,
+      total: uniqueTasks.length,
       pending,
       inProgress,
       completed,
       overdue,
     };
-  }, [tasks]);
+  }, [uniqueTasks]);
 
-  /**
-   * Search + filter tasks.
-   */
   const filteredTasks = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
 
-    return tasks.filter((task) => {
+    return uniqueTasks.filter((task) => {
       const matchesStatus =
         statusFilter === "ALL" ? true : task.status === statusFilter;
 
@@ -461,24 +507,23 @@ export default function EmployeeTasksPage() {
         task.priority,
         task.project?.name,
         task.createdBy?.fullName,
+        task.createdBy?.employeeCode,
         formatDate(task.dueDate),
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch = keyword
-        ? searchableText.includes(keyword)
-        : true;
+      const matchesSearch = keyword ? searchableText.includes(keyword) : true;
 
       return matchesStatus && matchesPriority && matchesSearch;
     });
-  }, [tasks, searchTerm, statusFilter, priorityFilter]);
+  }, [uniqueTasks, searchTerm, statusFilter, priorityFilter]);
 
-  /**
-   * Pagination calculation.
-   */
-  const totalPages = Math.max(1, Math.ceil(filteredTasks.length / TASKS_PER_PAGE));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredTasks.length / TASKS_PER_PAGE)
+  );
 
   const safeCurrentPage = Math.min(currentPage, totalPages);
 
@@ -487,9 +532,6 @@ export default function EmployeeTasksPage() {
 
   const paginatedTasks = filteredTasks.slice(startIndex, endIndex);
 
-  /**
-   * Clears filters and resets pagination.
-   */
   const clearFilters = () => {
     setSearchTerm("");
     setStatusFilter("ALL");
@@ -497,9 +539,6 @@ export default function EmployeeTasksPage() {
     setCurrentPage(1);
   };
 
-  /**
-   * Logout employee.
-   */
   const handleLogout = () => {
     clearAuthSession();
     router.replace("/login");
@@ -512,27 +551,30 @@ export default function EmployeeTasksPage() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
       <section className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
+        {/* Premium header */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
-          className="rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8"
+          className="relative overflow-hidden rounded-[2rem] border border-amber-200/30 bg-[#17100b]/75 p-6 shadow-2xl shadow-black/30 sm:p-8 lg:p-10"
         >
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-            <div>
-              <p className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-300">
-                <ClipboardList className="h-4 w-4" />
-                My Tasks
-              </p>
+          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+          <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+            <div>
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+                <Sparkles className="h-4 w-4" />
+                Employee Tasks
+              </div>
+
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
                 Assigned Tasks
               </h1>
 
-              <p className="mt-4 max-w-2xl text-base leading-7 text-white/65">
+              <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
                 View your assigned tasks, priority, due dates, project context
-                and current task status.
+                and current task progress in one clean employee workspace.
               </p>
             </div>
 
@@ -565,6 +607,20 @@ export default function EmployeeTasksPage() {
               </Button>
 
               <Button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                variant="outline"
+                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10 disabled:opacity-60"
+              >
+                <RefreshCcw
+                  className={`mr-2 h-4 w-4 ${
+                    isRefreshing ? "animate-spin" : ""
+                  }`}
+                />
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </Button>
+
+              <Button
                 onClick={handleLogout}
                 variant="outline"
                 className="h-11 rounded-xl border-red-300/20 bg-red-300/10 px-5 font-bold text-red-100 hover:bg-red-300/20"
@@ -577,23 +633,34 @@ export default function EmployeeTasksPage() {
         </motion.div>
 
         {/* Summary cards */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <TaskSummaryCard
             label="Total Tasks"
             value={taskSummary.total}
+            description="Unique assigned tasks."
             icon={ClipboardList}
+          />
+
+          <TaskSummaryCard
+            label="Pending"
+            value={taskSummary.pending}
+            description="Tasks waiting to start."
+            icon={Timer}
+            tone="warning"
           />
 
           <TaskSummaryCard
             label="In Progress"
             value={taskSummary.inProgress}
+            description="Tasks currently active."
             icon={Clock3}
-            tone="warning"
+            tone="info"
           />
 
           <TaskSummaryCard
             label="Completed"
             value={taskSummary.completed}
+            description="Tasks marked completed."
             icon={CheckCircle2}
             tone="success"
           />
@@ -601,8 +668,9 @@ export default function EmployeeTasksPage() {
           <TaskSummaryCard
             label="Overdue"
             value={taskSummary.overdue}
+            description="Open tasks past due date."
             icon={AlertTriangle}
-            tone="danger"
+            tone={taskSummary.overdue > 0 ? "danger" : "default"}
           />
         </div>
 
@@ -611,9 +679,15 @@ export default function EmployeeTasksPage() {
           <CardContent className="p-0">
             {/* Filters */}
             <div className="space-y-4 border-b border-white/10 p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                 <div>
+                  <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-200">
+                    <Filter className="h-3.5 w-3.5" />
+                    Task Directory
+                  </div>
+
                   <h2 className="text-xl font-black text-white">Task List</h2>
+
                   <p className="mt-1 text-sm text-white/50">
                     Showing {filteredTasks.length === 0 ? 0 : startIndex + 1}-
                     {Math.min(endIndex, filteredTasks.length)} of{" "}
@@ -621,7 +695,7 @@ export default function EmployeeTasksPage() {
                   </p>
                 </div>
 
-                <div className="grid w-full gap-3 sm:grid-cols-2 xl:max-w-4xl xl:grid-cols-[1.5fr_1fr_1fr_auto]">
+                <div className="grid w-full gap-3 sm:grid-cols-2 xl:max-w-5xl xl:grid-cols-[1.5fr_1fr_1fr_auto]">
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-300" />
                     <Input
@@ -630,7 +704,7 @@ export default function EmployeeTasksPage() {
                         setSearchTerm(event.target.value);
                         setCurrentPage(1);
                       }}
-                      placeholder="Search task..."
+                      placeholder="Search task, project, creator..."
                       className="h-11 border-white/10 bg-white/[0.04] pl-10 text-white placeholder:text-white/35"
                     />
                   </div>
@@ -689,31 +763,31 @@ export default function EmployeeTasksPage() {
             </div>
 
             {/* Desktop header */}
-            <div className="hidden border-b border-white/10 px-5 py-4 xl:grid xl:grid-cols-[1.8fr_0.9fr_0.9fr_1fr_1.2fr] xl:gap-4">
+            <div className="hidden border-b border-white/10 px-5 py-4 xl:grid xl:grid-cols-[1.55fr_1fr_0.8fr_0.85fr_0.95fr_1fr] xl:gap-4">
               <p className="text-sm font-bold text-white/50">Task</p>
-              <p className="text-sm font-bold text-white/50">Status</p>
+              <p className="text-sm font-bold text-white/50">Project</p>
               <p className="text-sm font-bold text-white/50">Priority</p>
+              <p className="text-sm font-bold text-white/50">Status</p>
               <p className="text-sm font-bold text-white/50">Due Date</p>
               <p className="text-right text-sm font-bold text-white/50">
-                Project
+                Created By
               </p>
             </div>
 
             {/* Responsive task list */}
             <div className="divide-y divide-white/10">
               {filteredTasks.length === 0 ? (
-                <div className="p-10 text-center text-white/50">
-                  No assigned tasks found.
-                </div>
+                <EmptyTasksState clearFilters={clearFilters} />
               ) : (
                 paginatedTasks.map((task) => (
                   <div
-                    key={task.id}
-                    className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1.8fr_0.9fr_0.9fr_1fr_1.2fr] xl:items-center xl:gap-4"
+                    key={getTaskUniqueKey(task)}
+                    className="grid gap-5 p-5 hover:bg-white/[0.025] xl:grid-cols-[1.55fr_1fr_0.8fr_0.85fr_0.95fr_1fr] xl:items-center xl:gap-4"
                   >
                     <div className="min-w-0">
                       <p className="text-sm text-white/40 xl:hidden">Task</p>
-                      <p className="break-words font-bold text-white">
+
+                      <p className="break-words font-black text-white">
                         {task.title}
                       </p>
 
@@ -728,23 +802,33 @@ export default function EmployeeTasksPage() {
                       ) : null}
                     </div>
 
-                    <div>
-                      <p className="mb-1 text-sm text-white/40 xl:hidden">
-                        Status
+                    <div className="min-w-0">
+                      <p className="text-sm text-white/40 xl:hidden">Project</p>
+
+                      <p className="break-words text-sm font-semibold text-white/70">
+                        {task.project?.name || "No project"}
                       </p>
-                      <Badge className={getTaskStatusBadgeClass(task.status)}>
-                        {task.status.replaceAll("_", " ")}
-                      </Badge>
                     </div>
 
                     <div>
                       <p className="mb-1 text-sm text-white/40 xl:hidden">
                         Priority
                       </p>
+
                       <Badge
                         className={getTaskPriorityBadgeClass(task.priority)}
                       >
-                        {task.priority}
+                        {task.priority || "—"}
+                      </Badge>
+                    </div>
+
+                    <div>
+                      <p className="mb-1 text-sm text-white/40 xl:hidden">
+                        Status
+                      </p>
+
+                      <Badge className={getTaskStatusBadgeClass(task.status)}>
+                        {task.status?.replaceAll("_", " ") || "—"}
                       </Badge>
                     </div>
 
@@ -752,23 +836,25 @@ export default function EmployeeTasksPage() {
                       <p className="text-sm text-white/40 xl:hidden">
                         Due Date
                       </p>
+
                       <p className="flex items-center gap-2 text-sm text-white/70">
-                        <Timer className="h-4 w-4 shrink-0 text-amber-300" />
+                        <CalendarDays className="h-4 w-4 shrink-0 text-amber-300" />
                         {formatDate(task.dueDate)}
                       </p>
                     </div>
 
-                    <div className="xl:text-right">
+                    <div className="min-w-0 xl:text-right">
                       <p className="text-sm text-white/40 xl:hidden">
-                        Project
-                      </p>
-                      <p className="break-words text-sm font-semibold text-white">
-                        {task.project?.name || "No project"}
+                        Created By
                       </p>
 
-                      {task.createdBy?.fullName ? (
+                      <p className="break-words text-sm font-semibold text-white">
+                        {task.createdBy?.fullName || "—"}
+                      </p>
+
+                      {task.createdBy?.employeeCode ? (
                         <p className="mt-1 text-xs text-white/45">
-                          By: {task.createdBy.fullName}
+                          {task.createdBy.employeeCode}
                         </p>
                       ) : null}
                     </div>
@@ -843,21 +929,63 @@ export default function EmployeeTasksPage() {
 
         {/* Note */}
         <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
-          <CardContent className="p-5">
+          <CardContent className="p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
-                <ExternalLink className="h-5 w-5" />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300">
+                <ShieldCheck className="h-5 w-5" />
               </div>
 
               <div>
-                <h3 className="font-black text-white">Task Updates</h3>
+                <h3 className="text-lg font-black text-white">
+                  Duplicate-safe Task Display
+                </h3>
                 <p className="mt-2 text-sm leading-6 text-white/55">
-                  This page currently displays assigned tasks. Task status update
-                  actions can be connected after confirming backend task update
-                  API route.
+                  This page shows unique assigned tasks only. Duplicate rows from
+                  API response are filtered before summary, search, pagination
+                  and list rendering.
                 </p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick links */}
+        <Card className="border border-amber-100/10 bg-[#17100b]/75 text-white shadow-xl shadow-black/20">
+          <CardContent className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
+            <Button
+              onClick={() => router.push("/employee/dashboard")}
+              className="h-11 rounded-xl bg-amber-400 font-bold text-black hover:bg-amber-300"
+            >
+              <LayoutDashboard className="mr-2 h-4 w-4" />
+              Dashboard
+            </Button>
+
+            <Button
+              onClick={() => router.push("/employee/attendance")}
+              variant="outline"
+              className="h-11 rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10"
+            >
+              <CalendarCheck className="mr-2 h-4 w-4" />
+              Attendance
+            </Button>
+
+            <Button
+              onClick={() => router.push("/employee/attendance/history")}
+              variant="outline"
+              className="h-11 rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10"
+            >
+              <History className="mr-2 h-4 w-4" />
+              History
+            </Button>
+
+            <Button
+              onClick={() => router.push("/employee/profile")}
+              variant="outline"
+              className="h-11 rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10"
+            >
+              <UserRound className="mr-2 h-4 w-4" />
+              Profile
+            </Button>
           </CardContent>
         </Card>
       </section>
