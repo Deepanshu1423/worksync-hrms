@@ -11,9 +11,7 @@ import {
   ArrowRight,
   BarChart3,
   BriefcaseBusiness,
-  Building2,
   CalendarCheck,
-  CheckCircle2,
   ClipboardList,
   FileBarChart,
   Settings,
@@ -34,7 +32,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { getAdminDashboard } from "@/services/dashboard.service";
-import { AdminDashboard } from "@/types/dashboard.types";
+import type { AdminDashboard } from "@/types/dashboard.types";
 
 type SummaryCardProps = {
   label: string;
@@ -48,6 +46,73 @@ type ApiErrorResponse = {
   success?: boolean;
   message?: string | string[];
   error?: string;
+};
+
+type SafeSummary = Record<string, unknown>;
+
+type SafeTaskStatusSummaryItem = {
+  status?: string | null;
+  total?: number | string | null;
+  count?: number | string | null;
+};
+
+type SafeDepartmentWiseEmployee = {
+  id?: string | null;
+  name?: string | null;
+  departmentName?: string | null;
+  totalEmployees?: number | string | null;
+  employeeCount?: number | string | null;
+  count?: number | string | null;
+};
+
+type SafeRole =
+  | string
+  | {
+      name?: string | null;
+    }
+  | null
+  | undefined;
+
+type SafeRecentEmployee = {
+  id?: string | null;
+  fullName?: string | null;
+  employeeCode?: string | null;
+  email?: string | null;
+  status?: string | null;
+  role?: SafeRole;
+};
+
+type SafeRecentAttendance = {
+  id?: string | null;
+  status?: string | null;
+  checkInAt?: string | Date | null;
+  workingMinutes?: number | string | null;
+  user?: {
+    fullName?: string | null;
+  } | null;
+};
+
+type SafeRecentTask = {
+  id?: string | null;
+  title?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  assignedTo?: {
+    fullName?: string | null;
+  } | null;
+};
+
+type SafeAdminDashboard = {
+  summary?: SafeSummary;
+  charts?: {
+    taskStatusSummary?: SafeTaskStatusSummaryItem[];
+    departmentWiseEmployees?: SafeDepartmentWiseEmployee[];
+  };
+  recent?: {
+    recentEmployees?: SafeRecentEmployee[];
+    recentAttendance?: SafeRecentAttendance[];
+    recentTasks?: SafeRecentTask[];
+  };
 };
 
 function getApiErrorMessage(error: unknown, fallback: string) {
@@ -93,25 +158,79 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function getNumberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsedValue = Number(value);
+
+    if (Number.isFinite(parsedValue)) {
+      return parsedValue;
+    }
+  }
+
+  return 0;
+}
+
+function getTextValue(value: unknown, fallback = "—") {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return fallback;
+}
+
+function getRoleName(role: SafeRole) {
+  if (typeof role === "string" && role.trim()) {
+    return role;
+  }
+
+  if (role && typeof role === "object" && typeof role.name === "string") {
+    return role.name;
+  }
+
+  return "—";
+}
+
 /**
  * Formats backend date/time into readable UI text.
  */
-function formatDateTime(value?: string | null) {
+function formatDateTime(value?: unknown) {
   if (!value) return "—";
+
+  const date = value instanceof Date ? value : new Date(String(value));
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
 
   return new Intl.DateTimeFormat("en-IN", {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 /**
  * Formats large dashboard numbers.
  */
-function formatNumber(value: number | string) {
-  if (typeof value === "string") return value;
+function formatNumber(value: unknown) {
+  if (typeof value === "string" && value.trim()) {
+    const parsedValue = Number(value);
 
-  return new Intl.NumberFormat("en-IN").format(value);
+    if (Number.isFinite(parsedValue)) {
+      return new Intl.NumberFormat("en-IN").format(parsedValue);
+    }
+
+    return value;
+  }
+
+  return new Intl.NumberFormat("en-IN").format(getNumberValue(value));
 }
 
 /**
@@ -277,7 +396,7 @@ export default function AdminDashboardPage() {
         setDashboard(data);
       } catch (error: unknown) {
         toast.error(
-          getApiErrorMessage(error, "Failed to load dashboard analytics."),
+          getApiErrorMessage(error, "Failed to load dashboard analytics.")
         );
       } finally {
         setIsLoading(false);
@@ -287,82 +406,98 @@ export default function AdminDashboardPage() {
     void fetchDashboard();
   }, []);
 
+  const dashboardData = useMemo(() => {
+    const safeDashboard = dashboard as unknown as SafeAdminDashboard | null;
+
+    return {
+      summary: safeDashboard?.summary ?? {},
+      taskStatusSummary: safeDashboard?.charts?.taskStatusSummary ?? [],
+      departmentWiseEmployees:
+        safeDashboard?.charts?.departmentWiseEmployees ?? [],
+      recentEmployees: safeDashboard?.recent?.recentEmployees ?? [],
+      recentAttendance: safeDashboard?.recent?.recentAttendance ?? [],
+      recentTasks: safeDashboard?.recent?.recentTasks ?? [],
+    };
+  }, [dashboard]);
+
   const summaryCards = useMemo(() => {
     if (!dashboard) return [];
 
-    const summary = dashboard.summary;
+    const summary = dashboardData.summary;
+    const overdueTasks = getNumberValue(summary.overdueTasks);
 
     return [
       {
         label: "Total Employees",
-        value: summary.totalEmployees,
+        value: getNumberValue(summary.totalEmployees),
         description: "Total workforce registered in HRMS.",
         icon: UsersRound,
         tone: "default" as const,
       },
       {
         label: "Active Employees",
-        value: summary.activeEmployees,
+        value: getNumberValue(summary.activeEmployees),
         description: "Currently active employees in the system.",
         icon: UserCheck,
         tone: "success" as const,
       },
       {
         label: "Terminated",
-        value: summary.terminatedEmployees,
+        value: getNumberValue(summary.terminatedEmployees),
         description: "Employees marked as terminated.",
         icon: UserX,
         tone: "danger" as const,
       },
       {
         label: "Today Present",
-        value: summary.todayPresent,
+        value: getNumberValue(summary.todayPresent),
         description: "Employees present based on today attendance.",
         icon: CalendarCheck,
         tone: "success" as const,
       },
       {
         label: "Today Absent",
-        value: summary.todayAbsent,
+        value: getNumberValue(summary.todayAbsent),
         description: "Employees absent for today.",
         icon: AlertTriangle,
         tone: "danger" as const,
       },
       {
         label: "Today Late",
-        value: summary.todayLate,
+        value: getNumberValue(summary.todayLate),
         description: "Employees marked late today.",
         icon: Activity,
         tone: "warning" as const,
       },
       {
         label: "Active Projects",
-        value: summary.activeProjects,
+        value: getNumberValue(summary.activeProjects),
         description: "Projects currently active in the system.",
         icon: BriefcaseBusiness,
         tone: "info" as const,
       },
       {
         label: "Overdue Tasks",
-        value: summary.overdueTasks,
+        value: overdueTasks,
         description: "Tasks that crossed their due date.",
         icon: AlertTriangle,
-        tone:
-          summary.overdueTasks > 0 ? ("danger" as const) : ("success" as const),
+        tone: overdueTasks > 0 ? ("danger" as const) : ("success" as const),
       },
     ];
-  }, [dashboard]);
+  }, [dashboard, dashboardData.summary]);
 
   const maxDepartmentEmployees = useMemo(() => {
-    if (!dashboard?.charts.departmentWiseEmployees.length) return 1;
+    if (dashboardData.departmentWiseEmployees.length === 0) return 1;
 
     return Math.max(
-      ...dashboard.charts.departmentWiseEmployees.map(
-        (department) => department.totalEmployees,
+      ...dashboardData.departmentWiseEmployees.map((department) =>
+        getNumberValue(
+          department.totalEmployees ?? department.employeeCount ?? department.count
+        )
       ),
-      1,
+      1
     );
-  }, [dashboard]);
+  }, [dashboardData.departmentWiseEmployees]);
 
   if (isLoading) {
     return <DashboardLoading />;
@@ -382,6 +517,9 @@ export default function AdminDashboardPage() {
       </section>
     );
   }
+
+  const totalTasks = getNumberValue(dashboardData.summary.totalTasks);
+  const totalProjects = getNumberValue(dashboardData.summary.totalProjects);
 
   return (
     <section className="mx-auto max-w-7xl space-y-6">
@@ -447,7 +585,7 @@ export default function AdminDashboardPage() {
               </div>
               <p className="text-sm text-white/50">Total Tasks</p>
               <p className="mt-1 text-3xl font-black text-white">
-                {formatNumber(dashboard.summary.totalTasks)}
+                {formatNumber(totalTasks)}
               </p>
             </div>
 
@@ -457,7 +595,7 @@ export default function AdminDashboardPage() {
               </div>
               <p className="text-sm text-white/50">Total Projects</p>
               <p className="mt-1 text-3xl font-black text-white">
-                {formatNumber(dashboard.summary.totalProjects)}
+                {formatNumber(totalProjects)}
               </p>
             </div>
           </div>
@@ -560,38 +698,41 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {dashboard.charts.taskStatusSummary.length === 0 ? (
+              {dashboardData.taskStatusSummary.length === 0 ? (
                 <EmptyState message="No task status data available." />
               ) : (
-                dashboard.charts.taskStatusSummary.map((item) => (
-                  <div
-                    key={item.status}
-                    className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold text-white/70">
-                        {item.status.replaceAll("_", " ")}
-                      </span>
-                      <Badge className={getStatusBadgeClass(item.status)}>
-                        {formatNumber(item.total)}
-                      </Badge>
-                    </div>
+                dashboardData.taskStatusSummary.map((item, index) => {
+                  const status = getTextValue(item.status, "UNKNOWN");
+                  const total = getNumberValue(item.total ?? item.count);
 
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-amber-400"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            (item.total /
-                              Math.max(dashboard.summary.totalTasks, 1)) *
+                  return (
+                    <div
+                      key={`${status}-${index}`}
+                      className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-white/70">
+                          {status.replaceAll("_", " ")}
+                        </span>
+                        <Badge className={getStatusBadgeClass(status)}>
+                          {formatNumber(total)}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-amber-400"
+                          style={{
+                            width: `${Math.min(
                               100,
-                          )}%`,
-                        }}
-                      />
+                              (total / Math.max(totalTasks, 1)) * 100
+                            )}%`,
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </CardContent>
@@ -610,38 +751,51 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2">
-              {dashboard.charts.departmentWiseEmployees.length === 0 ? (
+              {dashboardData.departmentWiseEmployees.length === 0 ? (
                 <EmptyState message="No department data available." />
               ) : (
-                dashboard.charts.departmentWiseEmployees.map((department) => (
-                  <div
-                    key={department.id}
-                    className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-2.5"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold text-white/70">
-                        {department.name}
-                      </span>
-                      <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">
-                        {formatNumber(department.totalEmployees)}
-                      </Badge>
-                    </div>
+                dashboardData.departmentWiseEmployees.map(
+                  (department, index) => {
+                    const departmentName = getTextValue(
+                      department.name ?? department.departmentName,
+                      "Unknown Department"
+                    );
 
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                    const departmentTotal = getNumberValue(
+                      department.totalEmployees ??
+                        department.employeeCount ??
+                        department.count
+                    );
+
+                    return (
                       <div
-                        className="h-full rounded-full bg-amber-400"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            (department.totalEmployees /
-                              maxDepartmentEmployees) *
-                              100,
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))
+                        key={department.id || `${departmentName}-${index}`}
+                        className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold text-white/70">
+                            {departmentName}
+                          </span>
+                          <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">
+                            {formatNumber(departmentTotal)}
+                          </Badge>
+                        </div>
+
+                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-amber-400"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                (departmentTotal / maxDepartmentEmployees) * 100
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+                )
               )}
             </div>
           </CardContent>
@@ -668,28 +822,42 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {dashboard.recent.recentEmployees.length === 0 ? (
+              {dashboardData.recentEmployees.length === 0 ? (
                 <EmptyState message="No recent employees found." />
               ) : (
-                dashboard.recent.recentEmployees.map((employee) => (
-                  <div
-                    key={employee.id}
-                    className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
-                  >
-                    <p className="font-bold text-white">{employee.fullName}</p>
-                    <p className="mt-1 break-all text-xs text-white/45">
-                      {employee.employeeCode} • {employee.email}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge className={getStatusBadgeClass(employee.status)}>
-                        {employee.status}
-                      </Badge>
-                      <Badge className="border-white/10 bg-white/5 text-white/70">
-                        {employee.role.name}
-                      </Badge>
+                dashboardData.recentEmployees.map((employee, index) => {
+                  const employeeStatus = getTextValue(
+                    employee.status,
+                    "UNKNOWN"
+                  );
+
+                  return (
+                    <div
+                      key={
+                        employee.id ||
+                        employee.employeeCode ||
+                        `employee-${index}`
+                      }
+                      className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                    >
+                      <p className="font-bold text-white">
+                        {getTextValue(employee.fullName, "Unknown Employee")}
+                      </p>
+                      <p className="mt-1 break-all text-xs text-white/45">
+                        {getTextValue(employee.employeeCode)} •{" "}
+                        {getTextValue(employee.email)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge className={getStatusBadgeClass(employeeStatus)}>
+                          {employeeStatus}
+                        </Badge>
+                        <Badge className="border-white/10 bg-white/5 text-white/70">
+                          {getRoleName(employee.role)}
+                        </Badge>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </CardContent>
@@ -713,34 +881,45 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {dashboard.recent.recentAttendance.length === 0 ? (
+              {dashboardData.recentAttendance.length === 0 ? (
                 <EmptyState message="No recent attendance found." />
               ) : (
-                dashboard.recent.recentAttendance.map((attendance) => (
-                  <div
-                    key={attendance.id}
-                    className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-bold text-white">
-                          {attendance.user.fullName}
-                        </p>
-                        <p className="mt-1 text-xs text-white/45">
-                          Check-in: {formatDateTime(attendance.checkInAt)}
-                        </p>
+                dashboardData.recentAttendance.map((attendance, index) => {
+                  const attendanceStatus = getTextValue(
+                    attendance.status,
+                    "UNKNOWN"
+                  );
+
+                  return (
+                    <div
+                      key={attendance.id || `attendance-${index}`}
+                      className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-white">
+                            {getTextValue(
+                              attendance.user?.fullName,
+                              "Unknown Employee"
+                            )}
+                          </p>
+                          <p className="mt-1 text-xs text-white/45">
+                            Check-in: {formatDateTime(attendance.checkInAt)}
+                          </p>
+                        </div>
+
+                        <Badge className={getStatusBadgeClass(attendanceStatus)}>
+                          {attendanceStatus}
+                        </Badge>
                       </div>
 
-                      <Badge className={getStatusBadgeClass(attendance.status)}>
-                        {attendance.status}
-                      </Badge>
+                      <p className="mt-3 text-xs text-white/45">
+                        Working minutes:{" "}
+                        {formatNumber(attendance.workingMinutes)}
+                      </p>
                     </div>
-
-                    <p className="mt-3 text-xs text-white/45">
-                      Working minutes: {attendance.workingMinutes || 0}
-                    </p>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </CardContent>
@@ -764,32 +943,40 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {dashboard.recent.recentTasks.length === 0 ? (
+              {dashboardData.recentTasks.length === 0 ? (
                 <EmptyState message="No recent tasks found." />
               ) : (
-                dashboard.recent.recentTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
-                  >
-                    <p className="line-clamp-2 font-bold text-white">
-                      {task.title}
-                    </p>
+                dashboardData.recentTasks.map((task, index) => {
+                  const taskStatus = getTextValue(task.status, "UNKNOWN");
 
-                    <p className="mt-1 text-xs text-white/45">
-                      Assigned to: {task.assignedTo.fullName}
-                    </p>
+                  return (
+                    <div
+                      key={task.id || `task-${index}`}
+                      className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                    >
+                      <p className="line-clamp-2 font-bold text-white">
+                        {getTextValue(task.title, "Untitled Task")}
+                      </p>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge className={getStatusBadgeClass(task.status)}>
-                        {task.status.replaceAll("_", " ")}
-                      </Badge>
-                      <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">
-                        {task.priority}
-                      </Badge>
+                      <p className="mt-1 text-xs text-white/45">
+                        Assigned to:{" "}
+                        {getTextValue(
+                          task.assignedTo?.fullName,
+                          "Not Assigned"
+                        )}
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge className={getStatusBadgeClass(taskStatus)}>
+                          {taskStatus.replaceAll("_", " ")}
+                        </Badge>
+                        <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">
+                          {getTextValue(task.priority, "NORMAL")}
+                        </Badge>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </CardContent>
