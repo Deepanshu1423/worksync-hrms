@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
-  BadgeCheck,
   CalendarCheck,
   CheckCircle2,
   ClipboardList,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import ResponsivePageActions from "@/components/common/ResponsivePageActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,18 +40,10 @@ type QuickAction = {
   isPrimary?: boolean;
 };
 
-/**
- * Reads logged-in user from localStorage.
- *
- * Important:
- * This function must only run in browser-side code,
- * not during server render.
- */
 function getStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
 
   const user = localStorage.getItem("worksync_user");
-
   if (!user) return null;
 
   try {
@@ -61,9 +53,6 @@ function getStoredUser(): AuthUser | null {
   }
 }
 
-/**
- * Safely reads user values because login response shape can slightly change.
- */
 function getStringValue(
   user: DashboardUser | null,
   keys: string[],
@@ -74,22 +63,13 @@ function getStringValue(
   for (const key of keys) {
     const value = user[key];
 
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
-
-    if (typeof value === "number") {
-      return String(value);
-    }
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number") return String(value);
   }
 
   return fallback;
 }
 
-/**
- * Converts role code into readable label.
- * Example: EMPLOYEE -> Employee
- */
 function formatRole(role?: string | null) {
   if (!role) return "Employee";
 
@@ -99,9 +79,6 @@ function formatRole(role?: string | null) {
     .join(" ");
 }
 
-/**
- * Builds initials for avatar.
- */
 function getInitials(name?: string | null) {
   if (!name) return "EM";
 
@@ -113,12 +90,6 @@ function getInitials(name?: string | null) {
     .toUpperCase();
 }
 
-/**
- * Loading screen while checking employee session.
- *
- * This same loading UI is rendered on the first server/client render,
- * so hydration mismatch will not happen.
- */
 function EmployeeDashboardLoading() {
   return (
     <main className="min-h-screen bg-[#0d0906] p-4 text-white sm:p-6 lg:p-8">
@@ -137,9 +108,6 @@ function EmployeeDashboardLoading() {
   );
 }
 
-/**
- * Reusable metric card.
- */
 function MetricCard({
   label,
   value,
@@ -181,9 +149,6 @@ function MetricCard({
   );
 }
 
-/**
- * Reusable quick action card.
- */
 function QuickActionCard({
   title,
   description,
@@ -238,9 +203,6 @@ function QuickActionCard({
   );
 }
 
-/**
- * Small profile row.
- */
 function ProfileMiniRow({
   icon: Icon,
   label,
@@ -267,24 +229,9 @@ function ProfileMiniRow({
 export default function EmployeeDashboardPage() {
   const router = useRouter();
 
-  /**
-   * Do not read localStorage directly in initial state.
-   *
-   * Reason:
-   * Server render cannot access localStorage.
-   * If server renders loading UI and client renders real dashboard immediately,
-   * React shows hydration mismatch.
-   */
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isPageReady, setIsPageReady] = useState(false);
 
-  /**
-   * Client-side route protection.
-   *
-   * We read localStorage after page mounts in browser.
-   * setTimeout keeps setState out of synchronous effect body,
-   * so React lint warning also stays clean.
-   */
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const token = localStorage.getItem("worksync_access_token");
@@ -337,10 +284,6 @@ export default function EmployeeDashboardPage() {
     };
   }, [user]);
 
-  /**
-   * Greeting text based on current browser time.
-   * This dashboard renders only after session check, so hydration mismatch is avoided.
-   */
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
 
@@ -349,11 +292,6 @@ export default function EmployeeDashboardPage() {
     return "Good Evening";
   }, []);
 
-  /**
-   * Duplicate-safe quick actions.
-   *
-   * This prevents duplicate action cards if the array is edited later.
-   */
   const quickActions = useMemo<QuickAction[]>(() => {
     const actions: QuickAction[] = [
       {
@@ -394,18 +332,11 @@ export default function EmployeeDashboardPage() {
     return Array.from(new Map(actions.map((item) => [item.href, item])).values());
   }, []);
 
-  /**
-   * Logout employee.
-   */
   const handleLogout = () => {
     clearAuthSession();
     router.replace("/login");
   };
 
-  /**
-   * First render will always show loading UI.
-   * This fixes hydration mismatch.
-   */
   if (!isPageReady || !user || user.role !== "EMPLOYEE") {
     return <EmployeeDashboardLoading />;
   }
@@ -425,46 +356,81 @@ export default function EmployeeDashboardPage() {
 
           <div className="relative flex flex-col justify-between gap-8 lg:flex-row lg:items-center">
             <div className="max-w-3xl">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
-                <Sparkles className="h-4 w-4" />
-                Employee Portal
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+                    <Sparkles className="h-4 w-4" />
+                    Employee Portal
+                  </div>
+
+                  <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
+                    {greeting}, {profile.fullName}
+                  </h1>
+
+                  <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
+                    Manage attendance, track assigned tasks, view attendance
+                    history and access your profile from one premium employee
+                    workspace.
+                  </p>
+                </div>
+
+                <div className="shrink-0 sm:hidden">
+                  <ResponsivePageActions
+                    actions={[
+                      {
+                        label: "Mark Attendance",
+                        icon: CalendarCheck,
+                        onClick: () => router.push("/employee/attendance"),
+                        variant: "primary",
+                      },
+                      {
+                        label: "View Tasks",
+                        icon: ClipboardList,
+                        onClick: () => router.push("/employee/tasks"),
+                      },
+                      {
+                        label: "Profile",
+                        icon: UserRound,
+                        onClick: () => router.push("/employee/profile"),
+                      },
+                      {
+                        label: "Logout",
+                        icon: LogOut,
+                        onClick: handleLogout,
+                        variant: "danger",
+                      },
+                    ]}
+                  />
+                </div>
               </div>
 
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
-                {greeting}, {profile.fullName}
-              </h1>
-
-              <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
-                Manage attendance, track assigned tasks, view attendance history
-                and access your profile from one premium employee workspace.
-              </p>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Button
-                  onClick={() => router.push("/employee/attendance")}
-                  className="h-11 rounded-xl bg-amber-400 px-5 font-black text-black hover:bg-amber-300"
-                >
-                  <CalendarCheck className="mr-2 h-4 w-4" />
-                  Mark Attendance
-                </Button>
-
-                <Button
-                  onClick={() => router.push("/employee/tasks")}
-                  variant="outline"
-                  className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-                >
-                  <ClipboardList className="mr-2 h-4 w-4" />
-                  View Tasks
-                </Button>
-
-                <Button
-                  onClick={handleLogout}
-                  variant="outline"
-                  className="h-11 rounded-xl border-red-300/20 bg-red-300/10 px-5 font-bold text-red-100 hover:bg-red-300/20"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Logout
-                </Button>
+              <div className="mt-6 hidden sm:block">
+                <ResponsivePageActions
+                  actions={[
+                    {
+                      label: "Mark Attendance",
+                      icon: CalendarCheck,
+                      onClick: () => router.push("/employee/attendance"),
+                      variant: "primary",
+                    },
+                    {
+                      label: "View Tasks",
+                      icon: ClipboardList,
+                      onClick: () => router.push("/employee/tasks"),
+                    },
+                    {
+                      label: "Profile",
+                      icon: UserRound,
+                      onClick: () => router.push("/employee/profile"),
+                    },
+                    {
+                      label: "Logout",
+                      icon: LogOut,
+                      onClick: handleLogout,
+                      variant: "danger",
+                    },
+                  ]}
+                />
               </div>
             </div>
 
@@ -496,7 +462,11 @@ export default function EmployeeDashboardPage() {
                   value={formatRole(profile.role)}
                 />
 
-                <ProfileMiniRow icon={Phone} label="Mobile" value={profile.mobile} />
+                <ProfileMiniRow
+                  icon={Phone}
+                  label="Mobile"
+                  value={profile.mobile}
+                />
 
                 <ProfileMiniRow icon={Mail} label="Email" value={profile.email} />
               </div>

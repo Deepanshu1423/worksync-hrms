@@ -35,6 +35,7 @@ import {
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import ResponsivePageActions from "@/components/common/ResponsivePageActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -710,8 +711,8 @@ export default function EmployeeAttendancePage() {
           <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-          <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-            <div>
+          <div className="relative flex flex-row items-start justify-between gap-4 lg:items-center">
+            <div className="min-w-0 flex-1">
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
                 <Sparkles className="h-4 w-4" />
                 Employee Attendance
@@ -728,42 +729,32 @@ export default function EmployeeAttendancePage() {
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                onClick={() => router.push("/employee/dashboard")}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-              >
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                Dashboard
-              </Button>
-
-              <Button
-                onClick={() => router.push("/employee/attendance/history")}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-              >
-                <History className="mr-2 h-4 w-4" />
-                History
-              </Button>
-
-              <Button
-                onClick={() => fetchTodayAttendance(true)}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-              >
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                Refresh
-              </Button>
-
-              <Button
-                onClick={handleLogout}
-                variant="outline"
-                className="h-11 rounded-xl border-red-300/20 bg-red-300/10 px-5 font-bold text-red-100 hover:bg-red-300/20"
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
-              </Button>
+            <div className="shrink-0">
+              <ResponsivePageActions
+                actions={[
+                  {
+                    label: "Dashboard",
+                    icon: LayoutDashboard,
+                    onClick: () => router.push("/employee/dashboard"),
+                  },
+                  {
+                    label: "History",
+                    icon: History,
+                    onClick: () => router.push("/employee/attendance/history"),
+                  },
+                  {
+                    label: "Refresh",
+                    icon: RefreshCcw,
+                    onClick: () => fetchTodayAttendance(true),
+                  },
+                  {
+                    label: "Logout",
+                    icon: LogOut,
+                    onClick: handleLogout,
+                    variant: "danger",
+                  },
+                ]}
+              />
             </div>
           </div>
         </motion.div>

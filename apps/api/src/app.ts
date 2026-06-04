@@ -27,24 +27,60 @@ app.use(helmet());
  * CORS configuration
  * Frontend currently runs on http://localhost:3000
  */
+/**
+ * CORS configuration
+ *
+ * Allows:
+ * - Laptop localhost frontend
+ * - Mobile/LAN frontend using laptop IP
+ * - Postman / Thunder Client requests with no origin
+ */
 const allowedOrigins = [
   process.env.CLIENT_URL,
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:9000",
-].filter(Boolean);
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3001",
+  "http://127.0.0.1:9000",
+
+  // Current laptop IP frontend URL
+  "http://192.168.1.13:9000",
+].filter(Boolean) as string[];
+
+/**
+ * This allows local WiFi IPs automatically.
+ * Example:
+ * http://192.168.1.13:9000
+ * http://192.168.1.20:9000
+ */
+function isAllowedLanOrigin(origin: string) {
+  return /^http:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):(3000|3001|9000)$/.test(
+    origin,
+  );
+}
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      /**
+       * Allow requests with no origin.
+       * Example: Postman, Thunder Client, server-to-server requests.
+       */
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin) || isAllowedLanOrigin(origin)) {
         return callback(null, true);
       }
 
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
-  })
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
 );
 /**
  * Request logger
@@ -71,7 +107,6 @@ app.get("/", (req: Request, res: Response) => {
     message: "WorkSync HRMS API is running successfully",
     version: "1.0.0",
   });
-  
 });
 app.use("/api/auth", authRoutes);
 app.use("/api/dashboard", dashboardRoutes);

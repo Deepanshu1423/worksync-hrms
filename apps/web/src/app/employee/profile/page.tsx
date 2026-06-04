@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import ResponsivePageActions from "@/components/common/ResponsivePageActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -55,13 +56,8 @@ function getStringValue(
   for (const key of keys) {
     const value = user[key];
 
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
-
-    if (typeof value === "number") {
-      return String(value);
-    }
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number") return String(value);
   }
 
   return fallback;
@@ -86,13 +82,8 @@ function getNestedStringValue(
   for (const key of valueKeys) {
     const value = record[key];
 
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
-
-    if (typeof value === "number") {
-      return String(value);
-    }
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number") return String(value);
   }
 
   return fallback;
@@ -344,61 +335,76 @@ export default function EmployeeProfilePage() {
           <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-28 left-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-          <div className="relative flex flex-col justify-between gap-8 lg:flex-row lg:items-center">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-[2rem] border border-amber-300/25 bg-amber-400 text-3xl font-black text-black shadow-2xl shadow-black/30">
-                {getInitials(profile.fullName)}
-              </div>
-
-              <div>
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
-                  <Sparkles className="h-4 w-4" />
-                  Employee Profile
+          <div className="relative flex flex-row items-start justify-between gap-4 lg:items-center">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+                <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-[2rem] border border-amber-300/25 bg-amber-400 text-3xl font-black text-black shadow-2xl shadow-black/30">
+                  {getInitials(profile.fullName)}
                 </div>
 
-                <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
-                  {profile.fullName}
-                </h1>
+                <div className="min-w-0">
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-4 py-2 text-xs font-black text-amber-200">
+                    <Sparkles className="h-4 w-4" />
+                    Employee Profile
+                  </div>
 
-                <p className="mt-3 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
-                  View your employee identity, role, department, designation,
-                  manager and contact information.
-                </p>
+                  <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">
+                    {profile.fullName}
+                  </h1>
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge className="border-emerald-300/20 bg-emerald-300/10 text-emerald-100">
-                    {profile.status}
-                  </Badge>
+                  <p className="mt-3 max-w-2xl text-base leading-7 text-white/65 sm:text-lg">
+                    View your employee identity, role, department, designation,
+                    manager and contact information.
+                  </p>
 
-                  <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">
-                    {formatRole(profile.role)}
-                  </Badge>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Badge className="border-emerald-300/20 bg-emerald-300/10 text-emerald-100">
+                      {profile.status}
+                    </Badge>
 
-                  <Badge className="border-white/10 bg-white/5 text-white/70">
-                    {profile.department}
-                  </Badge>
+                    <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">
+                      {formatRole(profile.role)}
+                    </Badge>
+
+                    <Badge className="border-white/10 bg-white/5 text-white/70">
+                      {profile.department}
+                    </Badge>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row lg:flex-col xl:flex-row">
-              <Button
-                onClick={() => router.push("/employee/dashboard")}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-              >
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                Dashboard
-              </Button>
-
-              <Button
-                onClick={handleLogout}
-                variant="outline"
-                className="h-11 rounded-xl border-red-300/20 bg-red-300/10 px-5 font-bold text-red-100 hover:bg-red-300/20"
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
-              </Button>
+            <div className="shrink-0">
+              <ResponsivePageActions
+                actions={[
+                  {
+                    label: "Dashboard",
+                    icon: LayoutDashboard,
+                    onClick: () => router.push("/employee/dashboard"),
+                  },
+                  {
+                    label: "Attendance",
+                    icon: CalendarCheck,
+                    onClick: () => router.push("/employee/attendance"),
+                  },
+                  {
+                    label: "Tasks",
+                    icon: ClipboardList,
+                    onClick: () => router.push("/employee/tasks"),
+                  },
+                  {
+                    label: "History",
+                    icon: History,
+                    onClick: () => router.push("/employee/attendance/history"),
+                  },
+                  {
+                    label: "Logout",
+                    icon: LogOut,
+                    onClick: handleLogout,
+                    variant: "danger",
+                  },
+                ]}
+              />
             </div>
           </div>
         </motion.div>

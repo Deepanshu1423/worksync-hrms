@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ElementType } from "react";
 import { isAxiosError } from "axios";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import ResponsivePageActions from "@/components/common/ResponsivePageActions";
 import {
   AlertTriangle,
   CalendarCheck,
@@ -127,7 +128,8 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   const statusCode = error.response.status;
   const data = error.response.data;
 
-  if (statusCode === 401) return "Your session has expired. Please login again.";
+  if (statusCode === 401)
+    return "Your session has expired. Please login again.";
   if (statusCode === 403) return "You do not have permission to view tasks.";
   if (statusCode === 404) {
     return "My Tasks API route not found. Please check backend route /tasks/my-tasks.";
@@ -417,7 +419,7 @@ export default function EmployeeTasksPage() {
       } catch (error: unknown) {
         if (isMounted) {
           toast.error(
-            getApiErrorMessage(error, "Failed to fetch assigned tasks.")
+            getApiErrorMessage(error, "Failed to fetch assigned tasks."),
           );
         }
       } finally {
@@ -469,15 +471,17 @@ export default function EmployeeTasksPage() {
   }, [tasks]);
 
   const taskSummary = useMemo(() => {
-    const pending = uniqueTasks.filter((task) => task.status === "PENDING")
-      .length;
-
-    const inProgress = uniqueTasks.filter(
-      (task) => task.status === "IN_PROGRESS"
+    const pending = uniqueTasks.filter(
+      (task) => task.status === "PENDING",
     ).length;
 
-    const completed = uniqueTasks.filter((task) => task.status === "COMPLETED")
-      .length;
+    const inProgress = uniqueTasks.filter(
+      (task) => task.status === "IN_PROGRESS",
+    ).length;
+
+    const completed = uniqueTasks.filter(
+      (task) => task.status === "COMPLETED",
+    ).length;
 
     const overdue = uniqueTasks.filter((task) => isTaskOverdue(task)).length;
 
@@ -522,7 +526,7 @@ export default function EmployeeTasksPage() {
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredTasks.length / TASKS_PER_PAGE)
+    Math.ceil(filteredTasks.length / TASKS_PER_PAGE),
   );
 
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -578,57 +582,37 @@ export default function EmployeeTasksPage() {
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                onClick={() => router.push("/employee/dashboard")}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-              >
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                Dashboard
-              </Button>
-
-              <Button
-                onClick={() => router.push("/employee/attendance")}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-              >
-                <CalendarCheck className="mr-2 h-4 w-4" />
-                Attendance
-              </Button>
-
-              <Button
-                onClick={() => router.push("/employee/attendance/history")}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10"
-              >
-                <History className="mr-2 h-4 w-4" />
-                History
-              </Button>
-
-              <Button
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                variant="outline"
-                className="h-11 rounded-xl border-amber-200/30 bg-white/5 px-5 font-bold text-white hover:bg-white/10 disabled:opacity-60"
-              >
-                <RefreshCcw
-                  className={`mr-2 h-4 w-4 ${
-                    isRefreshing ? "animate-spin" : ""
-                  }`}
-                />
-                {isRefreshing ? "Refreshing..." : "Refresh"}
-              </Button>
-
-              <Button
-                onClick={handleLogout}
-                variant="outline"
-                className="h-11 rounded-xl border-red-300/20 bg-red-300/10 px-5 font-bold text-red-100 hover:bg-red-300/20"
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
-              </Button>
-            </div>
+            <ResponsivePageActions
+              actions={[
+                {
+                  label: "Dashboard",
+                  icon: LayoutDashboard,
+                  onClick: () => router.push("/employee/dashboard"),
+                },
+                {
+                  label: "Attendance",
+                  icon: CalendarCheck,
+                  onClick: () => router.push("/employee/attendance"),
+                },
+                {
+                  label: "History",
+                  icon: History,
+                  onClick: () => router.push("/employee/attendance/history"),
+                },
+                {
+                  label: isRefreshing ? "Refreshing..." : "Refresh",
+                  icon: RefreshCcw,
+                  onClick: handleRefresh,
+                  disabled: isRefreshing,
+                },
+                {
+                  label: "Logout",
+                  icon: LogOut,
+                  onClick: handleLogout,
+                  variant: "danger",
+                },
+              ]}
+            />
           </div>
         </motion.div>
 
@@ -940,9 +924,9 @@ export default function EmployeeTasksPage() {
                   Duplicate-safe Task Display
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-white/55">
-                  This page shows unique assigned tasks only. Duplicate rows from
-                  API response are filtered before summary, search, pagination
-                  and list rendering.
+                  This page shows unique assigned tasks only. Duplicate rows
+                  from API response are filtered before summary, search,
+                  pagination and list rendering.
                 </p>
               </div>
             </div>
