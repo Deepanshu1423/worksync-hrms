@@ -60,7 +60,7 @@ const buildDateRangeCondition = (fromDate?: string, toDate?: string) => {
  * late minutes, and location coordinates.
  */
 export const getAttendanceReportService = async (
-  query: AttendanceReportQueryInput
+  query: AttendanceReportQueryInput,
 ) => {
   const whereCondition: any = {};
 
@@ -124,17 +124,20 @@ export const getAttendanceReportService = async (
 
   const summary = {
     totalRecords: records.length,
-    present: records.filter((record) => record.status === AttendanceStatus.PRESENT)
-      .length,
+    present: records.filter(
+      (record) => record.status === AttendanceStatus.PRESENT,
+    ).length,
     late: records.filter((record) => record.status === AttendanceStatus.LATE)
       .length,
-    absent: records.filter((record) => record.status === AttendanceStatus.ABSENT)
-      .length,
-    halfDay: records.filter((record) => record.status === AttendanceStatus.HALF_DAY)
-      .length,
+    absent: records.filter(
+      (record) => record.status === AttendanceStatus.ABSENT,
+    ).length,
+    halfDay: records.filter(
+      (record) => record.status === AttendanceStatus.HALF_DAY,
+    ).length,
     totalWorkingMinutes: records.reduce(
       (sum, record) => sum + record.workingMinutes,
-      0
+      0,
     ),
   };
 
@@ -155,7 +158,7 @@ export const getTaskReportService = async (query: TaskReportQueryInput) => {
 
   const createdAtCondition = buildDateRangeCondition(
     query.fromDate,
-    query.toDate
+    query.toDate,
   );
 
   if (createdAtCondition) {
@@ -231,7 +234,8 @@ export const getTaskReportService = async (query: TaskReportQueryInput) => {
 
   const summary = {
     totalTasks: records.length,
-    pending: records.filter((task) => task.status === TaskStatus.PENDING).length,
+    pending: records.filter((task) => task.status === TaskStatus.PENDING)
+      .length,
     inProgress: records.filter((task) => task.status === TaskStatus.IN_PROGRESS)
       .length,
     inReview: records.filter((task) => task.status === TaskStatus.IN_REVIEW)
@@ -244,7 +248,8 @@ export const getTaskReportService = async (query: TaskReportQueryInput) => {
       (task) =>
         task.dueDate &&
         task.dueDate < now &&
-        ![TaskStatus.COMPLETED, TaskStatus.CANCELLED].includes(task.status)
+        task.status !== TaskStatus.COMPLETED &&
+        task.status !== TaskStatus.CANCELLED,
     ).length,
   };
 
@@ -261,7 +266,7 @@ export const getTaskReportService = async (query: TaskReportQueryInput) => {
  * It supports filters by role, department, designation, and status.
  */
 export const getEmployeeReportService = async (
-  query: EmployeeReportQueryInput
+  query: EmployeeReportQueryInput,
 ) => {
   const whereCondition: any = {
     deletedAt: null,
@@ -336,13 +341,15 @@ export const getEmployeeReportService = async (
     totalEmployees: records.length,
     active: records.filter((employee) => employee.status === UserStatus.ACTIVE)
       .length,
-    inactive: records.filter((employee) => employee.status === UserStatus.INACTIVE)
-      .length,
-    terminated: records.filter(
-      (employee) => employee.status === UserStatus.TERMINATED
+    inactive: records.filter(
+      (employee) => employee.status === UserStatus.INACTIVE,
     ).length,
-    onNotice: records.filter((employee) => employee.status === UserStatus.ON_NOTICE)
-      .length,
+    terminated: records.filter(
+      (employee) => employee.status === UserStatus.TERMINATED,
+    ).length,
+    onNotice: records.filter(
+      (employee) => employee.status === UserStatus.ON_NOTICE,
+    ).length,
   };
 
   return {
@@ -361,7 +368,7 @@ export const getEmployeeReportService = async (
  * - date-wise employee lifecycle changes
  */
 export const getHireFireReportService = async (
-  query: HireFireReportQueryInput
+  query: HireFireReportQueryInput,
 ) => {
   const type = query.type || "ALL";
 

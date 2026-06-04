@@ -15,22 +15,45 @@ import {
  * - allowedRadius for backend consistency
  * - radiusMeters for frontend display
  */
-const formatOfficeLocationResponse = (location: {
+
+function toNumberValue(value: unknown) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return Number(value);
+  }
+
+  if (value && typeof value === "object" && "toString" in value) {
+    return Number(value.toString());
+  }
+
+  return 0;
+}
+function formatOfficeLocationResponse(location: {
   id: string;
   name: string;
   address: string | null;
-  latitude: number;
-  longitude: number;
+  latitude: unknown;
+  longitude: unknown;
   allowedRadius: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-}) => {
+}) {
   return {
-    ...location,
-    radiusMeters: location.allowedRadius,
+    id: location.id,
+    name: location.name,
+    address: location.address || "",
+    latitude: toNumberValue(location.latitude),
+    longitude: toNumberValue(location.longitude),
+    allowedRadius: location.allowedRadius,
+    isActive: location.isActive,
+    createdAt: location.createdAt,
+    updatedAt: location.updatedAt,
   };
-};
+}
 
 /**
  * Create office location.
@@ -40,7 +63,7 @@ const formatOfficeLocationResponse = (location: {
  * Employee attendance is NOT restricted based on this radius.
  */
 export const createOfficeLocationService = async (
-  data: CreateOfficeLocationInput
+  data: CreateOfficeLocationInput,
 ) => {
   const existingLocation = await prisma.officeLocation.findFirst({
     where: {
@@ -55,7 +78,7 @@ export const createOfficeLocationService = async (
   const officeLocation = await prisma.officeLocation.create({
     data: {
       name: data.name,
-      address: data.address || null,
+      address: data.address?.trim() || "",
       latitude: data.latitude,
       longitude: data.longitude,
 
@@ -96,7 +119,7 @@ export const getAllOfficeLocationsService = async () => {
   });
 
   return officeLocations.map((location) =>
-    formatOfficeLocationResponse(location)
+    formatOfficeLocationResponse(location),
   );
 };
 
@@ -105,7 +128,7 @@ export const getAllOfficeLocationsService = async () => {
  */
 export const updateOfficeLocationService = async (
   id: string,
-  data: UpdateOfficeLocationInput
+  data: UpdateOfficeLocationInput,
 ) => {
   const officeLocation = await prisma.officeLocation.findUnique({
     where: {
@@ -141,7 +164,9 @@ export const updateOfficeLocationService = async (
     },
     data: {
       name: data.name,
-      address: data.address,
+      ...(data.address !== undefined
+        ? { address: data.address?.trim() || "" }
+        : {}),
       latitude: data.latitude,
       longitude: data.longitude,
       allowedRadius: data.allowedRadius,
@@ -156,7 +181,7 @@ export const updateOfficeLocationService = async (
  */
 export const updateOfficeLocationStatusService = async (
   id: string,
-  data: UpdateOfficeLocationStatusInput
+  data: UpdateOfficeLocationStatusInput,
 ) => {
   const officeLocation = await prisma.officeLocation.findUnique({
     where: {
