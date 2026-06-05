@@ -56,6 +56,8 @@ WorkSync HRMS helps the company manage:
 <img width="3192" height="1680" alt="image" src="https://github.com/user-attachments/assets/2b6b9bb0-a80b-4a34-b140-7c84b63c4144" />
 
 
+
+
 ## Project Structure
 
 ```txt
