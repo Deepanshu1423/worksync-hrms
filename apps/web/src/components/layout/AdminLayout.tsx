@@ -23,7 +23,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 import { clearAuthSession } from "@/services/auth.service";
@@ -31,6 +37,11 @@ import { AuthUser } from "@/types/auth.types";
 
 type AdminLayoutProps = {
   children: ReactNode;
+};
+
+type AdminAuthState = {
+  user: AuthUser | null;
+  isCheckingAuth: boolean;
 };
 
 type NavItem = {
@@ -140,9 +151,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
    * Keep settings menu open when user is inside any settings page.
    */
   useEffect(() => {
-    if (isSettingsRoute) {
+    if (!isSettingsRoute) return;
+
+    const frameId = window.requestAnimationFrame(() => {
       setIsSettingsOpen(true);
-    }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
   }, [isSettingsRoute]);
 
   /**
@@ -290,8 +305,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const router = useRouter();
 
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [{ user, isCheckingAuth }, setAuthState] = useState<AdminAuthState>({
+    user: null,
+    isCheckingAuth: true,
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   /**
@@ -316,8 +333,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       return;
     }
 
-    setUser(storedUser);
-    setIsCheckingAuth(false);
+    const frameId = window.requestAnimationFrame(() => {
+      setAuthState({
+        user: storedUser,
+        isCheckingAuth: false,
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
   }, [router]);
 
   /**
@@ -382,6 +405,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   side="left"
                   className="w-72 border-white/10 bg-[#0d0906] p-0"
                 >
+                  <SheetTitle className="sr-only">
+                    Admin navigation menu
+                  </SheetTitle>
+                  <SheetDescription className="sr-only">
+                    Main navigation links for the HRMS admin dashboard.
+                  </SheetDescription>
+
                   <SidebarContent
                     onNavigate={() => setIsMobileMenuOpen(false)}
                   />

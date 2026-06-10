@@ -11,7 +11,6 @@
 }
 
 html {
-  scroll-behavior: smooth;
   color-scheme: dark;
 }
 
@@ -644,7 +643,6 @@ html[data-theme="light"] [class~="shadow-black/40"] {
 
 /* ---------- Smooth app feel ---------- */
 
-html,
 body {
   scroll-behavior: smooth;
 }
